@@ -1,3 +1,5 @@
+import Router from './router';
+
 export default function App() {
-  return <div>NeuroLab Enterprise</div>;
+  return <Router />;
 }

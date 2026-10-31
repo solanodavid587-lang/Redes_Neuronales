@@ -5,10 +5,10 @@ export interface Dataset {
   id: string;
   name: string;
   format: DatasetFormat;
-  size: string; // ej. "45.2 MB"
+  size: string;
   rows: number;
   status: DatasetStatus;
-  trainSplit: number; // ej. 80
-  valSplit: number;   // ej. 20
+  trainSplit: number;
+  valSplit: number;
   uploadedAt: string;
 }

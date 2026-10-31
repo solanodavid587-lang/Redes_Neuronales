@@ -8,6 +8,23 @@ interface Props {
 }
 
 export default function ModelDetailsPanel({ model, onClose }: Props) {
+  // Simula la descarga del archivo del modelo
+  const handleDownload = () => {
+    // En un entorno real, aquí harías un fetch a Supabase Storage o S3
+    // Ejemplo: window.open(model.downloadUrl, '_blank');
+    
+    // Simulamos la creación de un archivo falso para que el navegador lo descargue
+    const blob = new Blob(["Contenido simulado del modelo TensorFlow"], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${model.name}_${model.version}.${model.format.toLowerCase() === 'h5' ? 'h5' : 'zip'}`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
   return (
     <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-in slide-in-from-right duration-300">
       {/* HEADER */}
@@ -78,7 +95,7 @@ export default function ModelDetailsPanel({ model, onClose }: Props) {
           </div>
         </div>
 
-        {/* CHECKSUM (Trazabilidad) */}
+        {/* CHECKSUM */}
         <div>
           <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Trazabilidad (Checksum)</h3>
           <div className="bg-slate-900 p-3 rounded-lg font-mono text-[11px] text-emerald-400 break-all leading-relaxed">
@@ -90,7 +107,10 @@ export default function ModelDetailsPanel({ model, onClose }: Props) {
 
       {/* ACCIONES */}
       <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-3">
-        <button className="flex-1 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm flex items-center justify-center gap-2">
+        <button 
+          onClick={handleDownload}
+          className="flex-1 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm flex items-center justify-center gap-2"
+        >
           <Download size={16} /> Descargar Modelo
         </button>
       </div>

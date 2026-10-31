@@ -1,16 +1,25 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FolderKanban, Database, Package, MoreVertical, Calendar } from 'lucide-react';
 import { Project } from '../types';
 
 export default function ProjectCard({ project }: { project: Project }) {
+  const navigate = useNavigate();
+
   return (
-    <div className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all group flex flex-col">
+    <div 
+      onClick={() => navigate(`/projects/${project.id}`)}
+      className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all group flex flex-col cursor-pointer"
+    >
       <div className="p-5 flex-1">
         <div className="flex justify-between items-start mb-3">
           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
             <FolderKanban size={20} />
           </div>
-          <button className="text-slate-400 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button 
+            onClick={(e) => { e.stopPropagation(); /* Aquí abrirías un menú de opciones */ }}
+            className="text-slate-400 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
             <MoreVertical size={18} />
           </button>
         </div>

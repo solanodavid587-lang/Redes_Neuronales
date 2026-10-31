@@ -18,5 +18,5 @@ export interface EvaluationRun {
     falsePositive: number;
     trueNegative: number;
     falseNegative: number;
-  };
+  } | null;
 }

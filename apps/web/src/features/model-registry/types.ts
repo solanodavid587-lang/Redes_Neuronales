@@ -3,7 +3,7 @@ export type ModelStatus = 'DRAFT' | 'REVIEW' | 'APPROVED' | 'RETIRED';
 export interface ModelVersion {
   id: string;
   name: string;
-  version: string; // ej. "v1.0.0"
+  version: string;
   projectName: string;
   architecture: string;
   status: ModelStatus;

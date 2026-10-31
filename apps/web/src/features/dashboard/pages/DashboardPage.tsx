@@ -1,36 +1,99 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
-  FolderKanban, PlayCircle, Package, Cpu, ArrowUpRight, ArrowDownRight, 
-  MoreVertical, ExternalLink, Activity, Server, Database, Box, Plus
+  Zap, Clock, CheckCircle2, TrendingUp, ExternalLink, Activity, 
+  Plus, ArrowUpRight, ArrowDownRight, AlertTriangle, XCircle, 
+  Box, Inbox
 } from 'lucide-react';
 
-const kpis = [
-  { title: 'Proyectos Activos', value: '12', trend: '+2', isPositive: true, icon: FolderKanban, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { title: 'Entrenamientos', value: '3', trend: '+1', isPositive: true, icon: PlayCircle, color: 'text-amber-600', bg: 'bg-amber-50' },
-  { title: 'Modelos Aprobados', value: '45', trend: '+5', isPositive: true, icon: Package, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { title: 'Uso de Clúster', value: '68%', trend: '-10%', isPositive: false, icon: Cpu, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-];
+// --- TIPOS ---
+interface KpiData { 
+  computeCost: string; 
+  computeCostTrend: string; 
+  avgTrainingTime: string; 
+  avgTrainingTimeTrend: string; 
+  jobSuccessRate: string; 
+  jobSuccessRateTrend: string; 
+  modelsInProduction: string; 
+  modelsInProductionTrend: string; 
+}
 
-const recentJobs = [
-  { id: '#1042', project: 'Predicción Ventas Q4', arch: 'Feedforward', status: 'RUNNING', epoch: '45/100', progress: 45, time: 'Hace 2 min' },
-  { id: '#1041', project: 'Clasificación Imágenes', arch: 'CNN', status: 'COMPLETED', epoch: '100/100', progress: 100, time: 'Hace 1 hora' },
-  { id: '#1040', project: 'Detección Fraude', arch: 'RNN', status: 'FAILED', epoch: '12/50', progress: 24, time: 'Hace 3 horas' },
-  { id: '#1039', project: 'Generación Textos', arch: 'GAN', status: 'QUEUED', epoch: '0/200', progress: 0, time: 'Hace 5 horas' },
-];
+interface Job { 
+  id: string; 
+  project: string; 
+  arch: string; 
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'QUEUED'; 
+  progress: number; 
+  epoch: string; 
+  time: string; 
+}
+
+interface Alert { 
+  id: number; 
+  type: 'warning' | 'error' | 'info'; 
+  msg: string; 
+  time: string; 
+}
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
+  
+  // --- ESTADOS ---
+  const [kpis, setKpis] = useState<KpiData>({
+    computeCost: '$0.00',
+    computeCostTrend: '0%',
+    avgTrainingTime: '0h 0m',
+    avgTrainingTimeTrend: '0%',
+    jobSuccessRate: '0%',
+    jobSuccessRateTrend: '0%',
+    modelsInProduction: '0',
+    modelsInProductionTrend: '0',
+  });
+
+  const [recentJobs] = useState<Job[]>([]);
+  const [systemAlerts] = useState<Alert[]>([]);
+  const [isLoading] = useState(false);
+
+  // --- EFECTO PARA CONECTAR AL BACKEND ---
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        // const res = await fetch('http://localhost:8000/api/v1/dashboard/summary');
+        // const data = await res.json();
+        // setKpis(data.kpis);
+        // setRecentJobs(data.recentJobs);
+        // setSystemAlerts(data.alerts);
+      } catch (error) {
+        console.error("Error cargando el dashboard:", error);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
+  // --- TARJETAS KPI ---
+  const kpiCards = [
+    { title: 'Costo de Cómputo (Mes)', value: kpis.computeCost, trend: kpis.computeCostTrend, isPositive: kpis.computeCostTrend.startsWith('-'), subtitle: 'vs mes anterior', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { title: 'Tiempo Medio de Entrenamiento', value: kpis.avgTrainingTime, trend: kpis.avgTrainingTimeTrend, isPositive: kpis.avgTrainingTimeTrend.startsWith('-'), subtitle: 'por job', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { title: 'Tasa de Éxito de Jobs', value: kpis.jobSuccessRate, trend: kpis.jobSuccessRateTrend, isPositive: !kpis.jobSuccessRateTrend.startsWith('-'), subtitle: 'últimos 30 días', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'Modelos en Producción', value: kpis.modelsInProduction, trend: kpis.modelsInProductionTrend, isPositive: !kpis.modelsInProductionTrend.startsWith('-'), subtitle: 'nuevas versiones', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+  ];
+
   return (
     <div className="space-y-6">
       
-      {/* HEADER DEL DASHBOARD */}
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Overview</h1>
-          <p className="text-sm text-slate-500 mt-1">Monitorea el rendimiento de tus modelos y la infraestructura.</p>
+          <p className="text-sm text-slate-500 mt-1">Métricas de rendimiento, costos y salud del clúster de IA.</p>
         </div>
         <div className="flex gap-2">
-          {/* Botón reemplazado */}
-          <button className="px-3.5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors flex items-center gap-2">
+          {/* BOTÓN: Redirige a /projects y envía el estado "openNew" */}
+          <button 
+            onClick={() => navigate('/projects', { state: { openNew: true } })}
+            className="px-3.5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors flex items-center gap-2"
+          >
             <Plus size={16} /> Nuevo Proyecto
           </button>
         </div>
@@ -38,7 +101,7 @@ export default function DashboardPage() {
 
       {/* TARJETAS KPI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, idx) => {
+        {kpiCards.map((kpi, idx) => {
           const Icon = kpi.icon;
           return (
             <div key={idx} className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
@@ -56,155 +119,148 @@ export default function DashboardPage() {
                   {kpi.isPositive ? <ArrowUpRight size={14} className="mr-1"/> : <ArrowDownRight size={14} className="mr-1"/>}
                   {kpi.trend}
                 </span>
-                <span className="text-slate-400 ml-1.5">vs semana anterior</span>
+                <span className="text-slate-400 ml-1.5">{kpi.subtitle}</span>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* SECCIÓN INFERIOR */}
+      {/* SECCIÓN CENTRAL */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* TABLA DE ENTRENAMIENTOS */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col">
           <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
             <h2 className="text-[15px] font-semibold text-slate-900">Trabajos Recientes</h2>
-            <a href="/training" className="text-[13px] text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1">
+            <Link to="/training" className="text-[13px] text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1">
               Ver todo <ExternalLink size={12} />
-            </a>
+            </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px]">
-              <thead className="bg-slate-50/80 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Trabajo</th>
-                  <th className="px-5 py-3 font-medium">Arquitectura</th>
-                  <th className="px-5 py-3 font-medium">Estado</th>
-                  <th className="px-5 py-3 font-medium">Progreso</th>
-                  <th className="px-5 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {recentJobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-5 py-3.5">
-                      <div className="font-medium text-slate-900">{job.project}</div>
-                      <div className="text-slate-500 text-xs flex items-center gap-2 mt-0.5">
-                        <span>{job.id}</span>
-                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                        <span>{job.time}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium bg-white">
-                        {job.arch}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full
-                          ${job.status === 'RUNNING' ? 'bg-amber-500' : ''}
-                          ${job.status === 'COMPLETED' ? 'bg-emerald-500' : ''}
-                          ${job.status === 'FAILED' ? 'bg-red-500' : ''}
-                          ${job.status === 'QUEUED' ? 'bg-slate-400' : ''}
-                        `}></span>
-                        <span className="font-medium text-slate-700 capitalize">
-                          {job.status.toLowerCase()}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-full bg-slate-100 rounded-full h-1.5 max-w-[80px]">
-                          <div 
-                            className={`h-1.5 rounded-full ${job.status === 'FAILED' ? 'bg-red-500' : 'bg-indigo-500'}`} 
-                            style={{ width: `${job.progress}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs text-slate-500 w-10">{job.epoch}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button className="p-1 text-slate-400 hover:text-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        <MoreVertical size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          
+          <div className="flex-1 flex flex-col">
+            {isLoading ? (
+              <div className="flex-1 flex items-center justify-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              </div>
+            ) : recentJobs.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[13px]">
+                  <thead className="bg-slate-50/80 text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="px-5 py-3 font-medium">Trabajo</th>
+                      <th className="px-5 py-3 font-medium">Arquitectura</th>
+                      <th className="px-5 py-3 font-medium">Estado</th>
+                      <th className="px-5 py-3 font-medium">Progreso</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recentJobs.map((job) => (
+                      <tr key={job.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-5 py-3.5">
+                          <div className="font-medium text-slate-900">{job.project}</div>
+                          <div className="text-slate-500 text-xs flex items-center gap-2 mt-0.5">
+                            <span>{job.id}</span>
+                            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                            <span>{job.time}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium bg-white">
+                            {job.arch}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full
+                              ${job.status === 'RUNNING' ? 'bg-amber-500 animate-pulse' : ''}
+                              ${job.status === 'COMPLETED' ? 'bg-emerald-500' : ''}
+                              ${job.status === 'FAILED' ? 'bg-red-500' : ''}
+                              ${job.status === 'QUEUED' ? 'bg-slate-400' : ''}
+                            `}></span>
+                            <span className="font-medium text-slate-700 capitalize text-xs">
+                              {job.status === 'RUNNING' ? 'Ejecutando' : 
+                               job.status === 'COMPLETED' ? 'Completado' : 
+                               job.status === 'FAILED' ? 'Fallido' : 'En Cola'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 max-w-[80px]">
+                              <div 
+                                className={`h-1.5 rounded-full ${job.status === 'FAILED' ? 'bg-red-500' : 'bg-indigo-500'}`} 
+                                style={{ width: `${job.progress}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs text-slate-500 w-10">{job.epoch}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+                  <Inbox size={24} className="text-slate-400" />
+                </div>
+                <h3 className="text-sm font-medium text-slate-900">No hay entrenamientos recientes</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-[250px]">Cuando inicies un trabajo de TensorFlow, aparecerá aquí en tiempo real.</p>
+                <Link to="/training" className="mt-4 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors">
+                  Ir a Entrenamientos
+                </Link>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* PANEL DE INFRAESTRUCTURA (Estilo Terminal) */}
+        {/* PANEL DE ALERTAS */}
         <div className="bg-[#0f172a] rounded-lg shadow-sm border border-slate-800 flex flex-col overflow-hidden text-slate-300">
           <div className="px-5 py-4 border-b border-slate-800 flex justify-between items-center bg-[#0b1120]">
             <h2 className="text-[14px] font-medium text-white flex items-center gap-2">
-              <Activity size={16} className="text-indigo-400" /> System Health
+              <Activity size={16} className="text-indigo-400" /> Alertas del Sistema
             </h2>
-            <span className="text-[11px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Operational</span>
+            <span className={`text-[11px] font-mono px-2 py-0.5 rounded ${systemAlerts.length > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-slate-500 bg-slate-800'}`}>
+              {systemAlerts.length} Pendientes
+            </span>
           </div>
           
-          <div className="p-5 flex-1 font-mono text-[12px] space-y-4">
-            
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Server size={14} className="text-slate-500" />
-                <span>API Gateway</span>
+          <div className="p-5 flex-1 space-y-4">
+            {isLoading ? (
+              <div className="flex justify-center py-10">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-400"></div>
               </div>
-              <span className="text-slate-400">12ms</span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Database size={14} className="text-slate-500" />
-                <span>PostgreSQL</span>
+            ) : systemAlerts.length > 0 ? (
+              systemAlerts.map(alert => (
+                <div key={alert.id} className="flex gap-3 items-start">
+                  <div className="mt-0.5">
+                    {alert.type === 'warning' && <AlertTriangle size={16} className="text-amber-500" />}
+                    {alert.type === 'error' && <XCircle size={16} className="text-red-500" />}
+                    {alert.type === 'info' && <Box size={16} className="text-indigo-400" />}
+                  </div>
+                  <div>
+                    <p className="text-[13px] text-slate-200 leading-snug">{alert.msg}</p>
+                    <p className="text-[11px] text-slate-500 mt-1 font-mono">{alert.time}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <CheckCircle2 size={24} className="text-emerald-500 mb-2 opacity-50" />
+                <p className="text-[13px] text-slate-400">Todo en orden.</p>
+                <p className="text-[11px] text-slate-500">No hay alertas pendientes.</p>
               </div>
-              <span className="text-slate-400">5ms</span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Box size={14} className="text-slate-500" />
-                <span>Object Storage</span>
-              </div>
-              <span className="text-slate-400">45GB / 1TB</span>
-            </div>
-
-            <div className="pt-2 border-t border-slate-800">
-              <div className="flex justify-between text-slate-400 mb-2">
-                <span>ML Workers</span>
-                <span className="text-amber-400">2 / 3 Online</span>
-              </div>
-              <div className="flex gap-1">
-                <div className="h-1.5 flex-1 bg-emerald-500 rounded-sm"></div>
-                <div className="h-1.5 flex-1 bg-emerald-500 rounded-sm"></div>
-                <div className="h-1.5 flex-1 bg-slate-700 rounded-sm"></div>
-              </div>
-            </div>
-
-             <div className="pt-2">
-              <div className="flex justify-between text-slate-400 mb-2">
-                <span>Queue (Jobs)</span>
-                <span className="text-indigo-400">2 pending</span>
-              </div>
-              <div className="flex gap-1">
-                <div className="h-1.5 w-full bg-indigo-500 rounded-sm"></div>
-                <div className="h-1.5 w-full bg-indigo-500 rounded-sm"></div>
-                <div className="h-1.5 w-full bg-slate-800 rounded-sm"></div>
-                <div className="h-1.5 w-full bg-slate-800 rounded-sm"></div>
-              </div>
-            </div>
-
+            )}
           </div>
+          
           <div className="p-3 bg-[#0b1120] border-t border-slate-800 text-center">
-            <button className="text-[12px] text-slate-400 hover:text-white transition-colors">
+            <Link to="/admin" className="text-[12px] text-slate-400 hover:text-white transition-colors">
               Ir al panel de administración &rarr;
-            </button>
+            </Link>
           </div>
         </div>
-
       </div>
     </div>
   );

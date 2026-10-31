@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Terminal, Activity, Play, Square } from 'lucide-react';
+import { X, Terminal, Activity, Square } from 'lucide-react';
 import { TrainingJob } from '../types';
 
 interface Props {
@@ -10,15 +10,13 @@ interface Props {
 export default function JobMonitor({ job, onClose }: Props) {
   const [logs, setLogs] = useState<string[]>([]);
 
-  // Simulamos los logs que llegarían por WebSocket
   useEffect(() => {
-    const initialLogs = [
+    setLogs([
       `[INFO] Initializing job ${job.id}...`,
       `[INFO] Loading dataset...`,
       `[INFO] Compiling model: ${job.architecture}`,
       `[INFO] Starting training at epoch ${job.epoch}...`
-    ];
-    setLogs(initialLogs);
+    ]);
 
     if (job.status === 'RUNNING') {
       const interval = setInterval(() => {
@@ -33,14 +31,11 @@ export default function JobMonitor({ job, onClose }: Props) {
 
   return (
     <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-in slide-in-from-right duration-300">
-      {/* HEADER DEL PANEL */}
       <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
         <div>
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
             Job {job.id} 
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase
-              ${job.status === 'RUNNING' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}
-            `}>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${job.status === 'RUNNING' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
               {job.status}
             </span>
           </h2>
@@ -51,37 +46,31 @@ export default function JobMonitor({ job, onClose }: Props) {
         </button>
       </div>
 
-      {/* MÉTRICAS RÁPIDAS */}
       <div className="grid grid-cols-3 gap-px bg-slate-200 border-b border-slate-200">
         <div className="bg-white p-4 text-center">
           <p className="text-xs text-slate-500 mb-1">Época</p>
           <p className="text-lg font-bold text-slate-900">{job.epoch} <span className="text-sm font-normal text-slate-400">/ {job.totalEpochs}</span></p>
         </div>
         <div className="bg-white p-4 text-center">
-          <p className="text-xs text-slate-500 mb-1">Pérdida (Loss)</p>
+          <p className="text-xs text-slate-500 mb-1">Pérdida</p>
           <p className="text-lg font-bold text-red-600">{job.loss}</p>
         </div>
         <div className="bg-white p-4 text-center">
-          <p className="text-xs text-slate-500 mb-1">Precisión (Acc)</p>
+          <p className="text-xs text-slate-500 mb-1">Precisión</p>
           <p className="text-lg font-bold text-emerald-600">{job.accuracy}</p>
         </div>
       </div>
 
-      {/* BARRA DE PROGRESO */}
       <div className="p-5 border-b border-slate-200">
         <div className="flex justify-between text-xs font-medium text-slate-500 mb-2">
           <span>Progreso del Entrenamiento</span>
           <span>{job.progress}%</span>
         </div>
         <div className="w-full bg-slate-100 rounded-full h-2.5">
-          <div 
-            className="bg-indigo-600 h-2.5 rounded-full transition-all duration-1000" 
-            style={{ width: `${job.progress}%` }}
-          ></div>
+          <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-1000" style={{ width: `${job.progress}%` }}></div>
         </div>
       </div>
 
-      {/* TERMINAL DE LOGS */}
       <div className="flex-1 bg-[#0f172a] p-4 overflow-y-auto font-mono text-[12px] leading-relaxed text-slate-300">
         <div className="flex items-center gap-2 text-slate-500 mb-4 pb-2 border-b border-slate-800">
           <Terminal size={14} /> <span>Live Output</span>
@@ -92,15 +81,12 @@ export default function JobMonitor({ job, onClose }: Props) {
             <span className={log.includes('EPOCH') ? 'text-emerald-400' : 'text-slate-300'}>{log}</span>
           </div>
         ))}
-        {job.status === 'RUNNING' && (
-          <div className="animate-pulse text-slate-500 mt-2">_</div>
-        )}
+        {job.status === 'RUNNING' && <div className="animate-pulse text-slate-500 mt-2">_</div>}
       </div>
 
-      {/* FOOTER ACCIONES */}
-      <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-        <button className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-md hover:bg-red-50 transition-colors flex items-center gap-2">
-          <Square size={14} fill="currentColor" /> Detener
+      <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+        <button className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-md hover:bg-red-50 flex items-center gap-2">
+          <Square size={14} fill="currentColor" /> Detener Entrenamiento
         </button>
       </div>
     </div>

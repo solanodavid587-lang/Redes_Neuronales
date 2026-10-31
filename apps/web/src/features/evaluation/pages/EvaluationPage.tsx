@@ -1,156 +1,115 @@
 import React, { useState } from 'react';
-import { Download, Target, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Download, Target, TrendingUp, AlertTriangle, CheckCircle2, Inbox, FileSpreadsheet } from 'lucide-react';
 import LineChart from '../components/LineChart';
 import { EvaluationRun } from '../types';
 
-// Generador de datos simulados para el gráfico
-const generateMetrics = () => {
-  return Array.from({ length: 20 }).map((_, i) => ({
-    epoch: i + 1,
-    trainLoss: Math.max(0.05, 1.5 * Math.exp(-0.15 * i)),
-    valLoss: Math.max(0.15, 1.6 * Math.exp(-0.12 * i) + (i > 15 ? 0.1 : 0)), // Simula un poco de overfitting al final
-    trainAcc: Math.min(0.99, 0.4 + 0.6 * (1 - Math.exp(-0.2 * i))),
-    valAcc: Math.min(0.95, 0.35 + 0.6 * (1 - Math.exp(-0.18 * i))),
-  }));
-};
-
-const mockRun: EvaluationRun = {
-  id: 'eval-001',
-  jobId: '1041',
-  projectName: 'Clasificación de Imágenes Médicas',
-  architecture: 'CNN',
-  status: 'COMPLETED',
-  metrics: generateMetrics(),
-  confusionMatrix: {
-    truePositive: 850,
-    falsePositive: 45,
-    trueNegative: 910,
-    falseNegative: 30,
-  }
-};
-
 export default function EvaluationPage() {
-  const [run] = useState<EvaluationRun>(mockRun);
+  // Simulamos que el usuario tiene que seleccionar un Job de la lista
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
+  
+  // ESTADO VACÍO: Aquí se llenará con el fetch a la API
+  const [run, setRun] = useState<EvaluationRun | null>(null);
 
-  // Calcular métricas derivadas
-  const total = run.confusionMatrix.truePositive + run.confusionMatrix.falsePositive + run.confusionMatrix.trueNegative + run.confusionMatrix.falseNegative;
-  const accuracy = ((run.confusionMatrix.truePositive + run.confusionMatrix.trueNegative) / total) * 100;
-  const precision = (run.confusionMatrix.truePositive / (run.confusionMatrix.truePositive + run.confusionMatrix.falsePositive)) * 100;
-  const recall = (run.confusionMatrix.truePositive / (run.confusionMatrix.truePositive + run.confusionMatrix.falseNegative)) * 100;
-
-  // Preparar datos para el gráfico
-  const lossData = run.metrics.map(m => ({ epoch: m.epoch, train: m.trainLoss, val: m.valLoss }));
-  const accData = run.metrics.map(m => ({ epoch: m.epoch, train: m.trainAcc, val: m.valAcc }));
+  // Función para exportar CSV (Simula la descarga desde el backend)
+  const handleExport = () => {
+    if (!run) return;
+    
+    // Generamos un CSV falso
+    const csvContent = "data:text/csv;charset=utf-8,Epoch,TrainLoss,ValLoss,TrainAcc,ValAcc\n" +
+      run.metrics.map(m => `${m.epoch},${m.trainLoss},${m.valLoss},${m.trainAcc},${m.valAcc}`).join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `metricas_job_${run.jobId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-6">
       
-      {/* HEADER */}
+      {/* HEADER CON SELECTOR DE JOB */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Evaluación de Métricas</h1>
-          <p className="text-sm text-slate-500 mt-1">Análisis de rendimiento para el Job <span className="font-mono font-medium text-slate-700">#{run.jobId}</span></p>
+          <p className="text-sm text-slate-500 mt-1">Analiza el rendimiento de tus modelos entrenados.</p>
         </div>
-        <button className="px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 shadow-sm transition-colors flex items-center justify-center gap-2">
-          <Download size={16} /> Exportar Reporte PDF
-        </button>
-      </div>
-
-      {/* TARJETAS DE RESUMEN */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg"><Target size={24} /></div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Exactitud (Accuracy)</p>
-            <p className="text-xl font-bold text-slate-900">{accuracy.toFixed(2)}%</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg"><TrendingUp size={24} /></div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Precisión</p>
-            <p className="text-xl font-bold text-slate-900">{precision.toFixed(2)}%</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-lg"><AlertTriangle size={24} /></div>
-          <div>
-            <p className="text-xs font-medium text-slate-500">Sensibilidad (Recall)</p>
-            <p className="text-xl font-bold text-slate-900">{recall.toFixed(2)}%</p>
-          </div>
-        </div>
-      </div>
-
-      {/* GRÁFICOS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <LineChart 
-          data={lossData} 
-          title="Curva de Pérdida (Loss)" 
-          yLabel="Épocas" 
-          colorTrain="#6366f1" // Indigo
-          colorVal="#f43f5e"   // Rose (Para notar el overfitting)
-        />
-        <LineChart 
-          data={accData} 
-          title="Curva de Exactitud (Accuracy)" 
-          yLabel="Épocas" 
-          colorTrain="#6366f1" 
-          colorVal="#10b981"   // Emerald
-        />
-      </div>
-
-      {/* MATRIZ DE CONFUSIÓN Y DETALLES */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Matriz Visual */}
-        <div className="lg:col-span-2 bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4">Matriz de Confusión (Test Set)</h3>
+        <div className="flex items-center gap-3">
+          <select 
+            value={selectedJobId}
+            onChange={(e) => {
+              setSelectedJobId(e.target.value);
+              // Aquí harías el fetch con e.target.value
+              // setRun(null); 
+            }}
+            className="text-sm border border-slate-300 rounded-md py-2 px-3 bg-white focus:ring-2 focus:ring-indigo-500 outline-none min-w-[200px]"
+          >
+            <option value="">Seleccionar Entrenamiento (Job)...</option>
+            {/* Estos se llenarán desde la API de jobs completados */}
+            <option value="1041">#1041 - Clasificación Imágenes</option>
+            <option value="1038">#1038 - Predicción Ventas</option>
+          </select>
           
-          <div className="grid grid-cols-2 gap-2 max-w-sm mx-auto text-center text-sm">
-            {/* Verdaderos Positivos */}
-            <div className="bg-emerald-500 text-white p-4 rounded-lg flex flex-col justify-center shadow-inner">
-              <span className="text-2xl font-bold">{run.confusionMatrix.truePositive}</span>
-              <span className="text-xs opacity-90 mt-1">Verdadero Positivo</span>
-            </div>
-            {/* Falsos Positivos */}
-            <div className="bg-red-400 text-white p-4 rounded-lg flex flex-col justify-center shadow-inner">
-              <span className="text-2xl font-bold">{run.confusionMatrix.falsePositive}</span>
-              <span className="text-xs opacity-90 mt-1">Falso Positivo</span>
-            </div>
-            {/* Falsos Negativos */}
-            <div className="bg-red-400 text-white p-4 rounded-lg flex flex-col justify-center shadow-inner">
-              <span className="text-2xl font-bold">{run.confusionMatrix.falseNegative}</span>
-              <span className="text-xs opacity-90 mt-1">Falso Negativo</span>
-            </div>
-            {/* Verdaderos Negativos */}
-            <div className="bg-emerald-500 text-white p-4 rounded-lg flex flex-col justify-center shadow-inner">
-              <span className="text-2xl font-bold">{run.confusionMatrix.trueNegative}</span>
-              <span className="text-xs opacity-90 mt-1">Verdadero Negativo</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Observaciones del Modelo */}
-        <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-col">
-          <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-            <CheckCircle2 size={16} className="text-emerald-500" /> Veredicto del Modelo
-          </h3>
-          <div className="space-y-4 text-sm text-slate-600 flex-1">
-            <p>El modelo muestra un rendimiento excelente en la clasificación de imágenes médicas. La exactitud del <strong className="text-slate-900">{accuracy.toFixed(1)}%</strong> supera el umbral requerido del 90%.</p>
-            <div className="bg-slate-50 p-3 rounded border border-slate-100 text-xs">
-              <span className="font-semibold text-slate-800 block mb-1">Observaciones técnicas:</span>
-              <ul className="list-disc list-inside space-y-1 text-slate-500">
-                <li>Ligero <em>overfitting</em> detectado después de la época 15.</li>
-                <li>Se recomienda aplicar <em>Early Stopping</em> o aumentar el <em>Dropout</em>.</li>
-              </ul>
-            </div>
-          </div>
-          <button className="mt-4 w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium rounded-md transition-colors border border-indigo-200">
-            Aprobar y Guardar en Registro (M08)
+          <button 
+            onClick={handleExport}
+            disabled={!run}
+            className="px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Download size={16} /> Exportar CSV
           </button>
         </div>
-
       </div>
+
+      {/* CONTENIDO PRINCIPAL */}
+      {run ? (
+        <>
+          {/* TARJETAS DE RESUMEN */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg"><Target size={24} /></div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">Exactitud (Accuracy)</p>
+                <p className="text-xl font-bold text-slate-900">
+                  {((run.confusionMatrix?.truePositive! + run.confusionMatrix?.trueNegative!) / 
+                    (run.confusionMatrix?.truePositive! + run.confusionMatrix?.trueNegative! + run.confusionMatrix?.falsePositive! + run.confusionMatrix?.falseNegative!) * 100).toFixed(2)}%
+                </p>
+              </div>
+            </div>
+            {/* ... Otras 2 tarjetas de precisión y recall ... */}
+          </div>
+
+          {/* GRÁFICOS */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <LineChart 
+              data={run.metrics.map(m => ({ epoch: m.epoch, train: m.trainLoss, val: m.valLoss }))} 
+              title="Curva de Pérdida (Loss)" 
+              yLabel="Épocas" 
+              colorTrain="#6366f1" 
+              colorVal="#f43f5e" 
+            />
+            <LineChart 
+              data={run.metrics.map(m => ({ epoch: m.epoch, train: m.trainAcc, val: m.valAcc }))} 
+              title="Curva de Exactitud (Accuracy)" 
+              yLabel="Épocas" 
+              colorTrain="#6366f1" 
+              colorVal="#10b981" 
+            />
+          </div>
+        </>
+      ) : (
+        // ESTADO VACÍO (Si no se ha seleccionado un Job)
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col items-center justify-center py-24 text-center">
+          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
+            <Inbox size={32} className="text-slate-300" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">Ningún entrenamiento seleccionado</h3>
+          <p className="text-sm text-slate-500 mt-1 max-w-sm">Selecciona un Job completado en el menú superior para visualizar sus métricas y matriz de confusión.</p>
+        </div>
+      )}
+
     </div>
   );
 }

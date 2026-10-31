@@ -1,4 +1,3 @@
-export type NetworkFamily = 'Feedforward' | 'RNN' | 'CNN' | 'GAN';
 export type LayerType = 'Input' | 'Dense' | 'Conv2D' | 'LSTM' | 'Dropout' | 'Output';
 
 export interface Layer {
@@ -8,8 +7,7 @@ export interface Layer {
   activation: string;
 }
 
-export interface Architecture {
-  name: string;
-  family: NetworkFamily;
+export interface ArchitectureConfig {
+  family: string;
   layers: Layer[];
 }

@@ -1,115 +1,120 @@
-import React, { useState } from 'react';
-import { Download, Target, TrendingUp, AlertTriangle, CheckCircle2, Inbox, FileSpreadsheet } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Download, Inbox, Target } from 'lucide-react';
 import LineChart from '../components/LineChart';
-import { EvaluationRun } from '../types';
+import type { TrainingJob } from '../../training/types';
+import { api, errorMessage, type Page } from '../../../lib/api';
+import { ErrorState, LoadingState } from '../../../components/ui/Feedback';
+
+interface MetricPoint {
+  epoch: number;
+  trainLoss: number;
+  valLoss: number;
+  trainAcc: number;
+  valAcc: number;
+}
 
 export default function EvaluationPage() {
-  // Simulamos que el usuario tiene que seleccionar un Job de la lista
-  const [selectedJobId, setSelectedJobId] = useState<string>('');
-  
-  // ESTADO VACÍO: Aquí se llenará con el fetch a la API
-  const [run, setRun] = useState<EvaluationRun | null>(null);
+  const [jobs, setJobs] = useState<TrainingJob[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState('');
+  const [metrics, setMetrics] = useState<MetricPoint[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [error, setError] = useState('');
 
-  // Función para exportar CSV (Simula la descarga desde el backend)
-  const handleExport = () => {
-    if (!run) return;
-    
-    // Generamos un CSV falso
-    const csvContent = "data:text/csv;charset=utf-8,Epoch,TrainLoss,ValLoss,TrainAcc,ValAcc\n" +
-      run.metrics.map(m => `${m.epoch},${m.trainLoss},${m.valLoss},${m.trainAcc},${m.valAcc}`).join("\n");
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `metricas_job_${run.jobId}.csv`);
-    document.body.appendChild(link);
+  useEffect(() => {
+    let active = true;
+    api.get<Page<TrainingJob>>('/training-jobs?limit=100')
+      .then(result => {
+        if (!active) return;
+        const completedJobs = result.items.filter(job => job.status === 'COMPLETED');
+        setJobs(completedJobs);
+        if (completedJobs.length) setSelectedJobId(completedJobs[0].id);
+      })
+      .catch(requestError => { if (active) setError(errorMessage(requestError)); })
+      .finally(() => { if (active) setLoadingJobs(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      setMetrics([]);
+      return;
+    }
+    let active = true;
+    setLoadingMetrics(true);
+    setError('');
+    api.get<{ items: MetricPoint[] }>(`/training-jobs/${selectedJobId}/metrics`)
+      .then(result => { if (active) setMetrics(result.items); })
+      .catch(requestError => { if (active) setError(errorMessage(requestError)); })
+      .finally(() => { if (active) setLoadingMetrics(false); });
+    return () => { active = false; };
+  }, [selectedJobId]);
+
+  const selectedJob = jobs.find(job => job.id === selectedJobId);
+  const latest = metrics[metrics.length - 1];
+  const chartLoss = useMemo(() => metrics.map(metric => ({
+    epoch: metric.epoch, train: metric.trainLoss, val: metric.valLoss,
+  })), [metrics]);
+  const chartAccuracy = useMemo(() => metrics.map(metric => ({
+    epoch: metric.epoch, train: metric.trainAcc, val: metric.valAcc,
+  })), [metrics]);
+
+  function exportCsv() {
+    if (!metrics.length || !selectedJob) return;
+    const rows = [
+      ['epoch', 'train_loss', 'validation_loss', 'train_accuracy', 'validation_accuracy'],
+      ...metrics.map(metric => [metric.epoch, metric.trainLoss, metric.valLoss, metric.trainAcc, metric.valAcc]),
+    ];
+    const csv = `\uFEFF${rows.map(row => row.join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `metricas_${selectedJob.id}.csv`;
     link.click();
-    document.body.removeChild(link);
-  };
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-6">
-      
-      {/* HEADER CON SELECTOR DE JOB */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Evaluación de Métricas</h1>
-          <p className="text-sm text-slate-500 mt-1">Analiza el rendimiento de tus modelos entrenados.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Evaluación de métricas</h1>
+          <p className="mt-1 text-sm text-slate-500">Compara las curvas de entrenamiento de trabajos completados.</p>
         </div>
-        
-        <div className="flex items-center gap-3">
-          <select 
-            value={selectedJobId}
-            onChange={(e) => {
-              setSelectedJobId(e.target.value);
-              // Aquí harías el fetch con e.target.value
-              // setRun(null); 
-            }}
-            className="text-sm border border-slate-300 rounded-md py-2 px-3 bg-white focus:ring-2 focus:ring-indigo-500 outline-none min-w-[200px]"
-          >
-            <option value="">Seleccionar Entrenamiento (Job)...</option>
-            {/* Estos se llenarán desde la API de jobs completados */}
-            <option value="1041">#1041 - Clasificación Imágenes</option>
-            <option value="1038">#1038 - Predicción Ventas</option>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select value={selectedJobId} onChange={event => setSelectedJobId(event.target.value)} aria-label="Seleccionar entrenamiento completado" disabled={loadingJobs || !jobs.length} className="min-w-60 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50">
+            {!jobs.length && <option value="">No hay trabajos completados</option>}
+            {jobs.map(job => <option key={job.id} value={job.id}>#{job.id} · {job.projectName}</option>)}
           </select>
-          
-          <button 
-            onClick={handleExport}
-            disabled={!run}
-            className="px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <Download size={16} /> Exportar CSV
-          </button>
+          <button onClick={exportCsv} disabled={!metrics.length} className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Download size={16} /> Exportar CSV</button>
         </div>
-      </div>
+      </header>
 
-      {/* CONTENIDO PRINCIPAL */}
-      {run ? (
+      {error && <ErrorState message={error} />}
+      {loadingJobs || loadingMetrics ? <LoadingState label="Cargando métricas…" /> : selectedJob && metrics.length ? (
         <>
-          {/* TARJETAS DE RESUMEN */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg"><Target size={24} /></div>
-              <div>
-                <p className="text-xs font-medium text-slate-500">Exactitud (Accuracy)</p>
-                <p className="text-xl font-bold text-slate-900">
-                  {((run.confusionMatrix?.truePositive! + run.confusionMatrix?.trueNegative!) / 
-                    (run.confusionMatrix?.truePositive! + run.confusionMatrix?.trueNegative! + run.confusionMatrix?.falsePositive! + run.confusionMatrix?.falseNegative!) * 100).toFixed(2)}%
-                </p>
-              </div>
+          <section className="grid gap-4 sm:grid-cols-2">
+            <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-lg bg-emerald-50 p-3 text-emerald-600"><Target size={24} /></div>
+              <div><p className="text-xs font-medium text-slate-500">Exactitud de validación</p><p className="text-xl font-bold text-slate-900">{latest ? `${(latest.valAcc * 100).toFixed(2)}%` : '—'}</p></div>
             </div>
-            {/* ... Otras 2 tarjetas de precisión y recall ... */}
-          </div>
-
-          {/* GRÁFICOS */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <LineChart 
-              data={run.metrics.map(m => ({ epoch: m.epoch, train: m.trainLoss, val: m.valLoss }))} 
-              title="Curva de Pérdida (Loss)" 
-              yLabel="Épocas" 
-              colorTrain="#6366f1" 
-              colorVal="#f43f5e" 
-            />
-            <LineChart 
-              data={run.metrics.map(m => ({ epoch: m.epoch, train: m.trainAcc, val: m.valAcc }))} 
-              title="Curva de Exactitud (Accuracy)" 
-              yLabel="Épocas" 
-              colorTrain="#6366f1" 
-              colorVal="#10b981" 
-            />
-          </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-medium text-slate-500">Pérdida de validación</p><p className="mt-1 text-xl font-bold text-slate-900">{latest?.valLoss.toFixed(4) ?? '—'}</p>
+              <p className="mt-1 text-xs text-slate-500">{selectedJob.projectName} · {selectedJob.architecture} · {metrics.length} épocas registradas</p>
+            </div>
+          </section>
+          <section className="grid gap-6 lg:grid-cols-2">
+            <LineChart data={chartLoss} title="Curva de pérdida" yLabel="Época" colorTrain="#6366f1" colorVal="#f43f5e" />
+            <LineChart data={chartAccuracy} title="Curva de exactitud" yLabel="Época" colorTrain="#6366f1" colorVal="#10b981" />
+          </section>
         </>
       ) : (
-        // ESTADO VACÍO (Si no se ha seleccionado un Job)
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
-            <Inbox size={32} className="text-slate-300" />
-          </div>
-          <h3 className="text-lg font-semibold text-slate-900">Ningún entrenamiento seleccionado</h3>
-          <p className="text-sm text-slate-500 mt-1 max-w-sm">Selecciona un Job completado en el menú superior para visualizar sus métricas y matriz de confusión.</p>
+        <div className="flex min-h-80 flex-col items-center justify-center rounded-lg border border-slate-200 bg-white px-6 text-center shadow-sm">
+          <Inbox size={36} className="mb-4 text-slate-300" />
+          <h2 className="font-semibold text-slate-900">No hay métricas para evaluar</h2>
+          <p className="mt-1 max-w-sm text-sm text-slate-500">Completa un entrenamiento y asegúrate de que el worker haya enviado métricas por época.</p>
         </div>
       )}
-
     </div>
   );
 }

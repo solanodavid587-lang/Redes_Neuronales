@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Zap, Clock, CheckCircle2, TrendingUp, ExternalLink, Activity, 
   Plus, ArrowUpRight, ArrowDownRight, AlertTriangle, XCircle, 
   Box, Inbox
 } from 'lucide-react';
+import { api, errorMessage } from '../../../lib/api';
+import { ErrorState } from '../../../components/ui/Feedback';
 
 // --- TIPOS ---
 interface KpiData { 
@@ -20,12 +22,13 @@ interface KpiData {
 
 interface Job { 
   id: string; 
-  project: string; 
-  arch: string; 
+  projectName: string;
+  architecture: string;
   status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'QUEUED'; 
   progress: number; 
-  epoch: string; 
-  time: string; 
+  epoch: number;
+  totalEpochs: number;
+  startedAt: string;
 }
 
 interface Alert { 
@@ -37,39 +40,47 @@ interface Alert {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  
-  // --- ESTADOS ---
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [loadError, setLoadError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [kpis, setKpis] = useState<KpiData>({
-    computeCost: '$0.00',
-    computeCostTrend: '0%',
-    avgTrainingTime: '0h 0m',
-    avgTrainingTimeTrend: '0%',
-    jobSuccessRate: '0%',
-    jobSuccessRateTrend: '0%',
+    computeCost: '—',
+    computeCostTrend: '—',
+    avgTrainingTime: '—',
+    avgTrainingTimeTrend: '—',
+    jobSuccessRate: '—',
+    jobSuccessRateTrend: '—',
     modelsInProduction: '0',
-    modelsInProductionTrend: '0',
+    modelsInProductionTrend: '—',
   });
 
-  const [recentJobs] = useState<Job[]>([]);
-  const [systemAlerts] = useState<Alert[]>([]);
-  const [isLoading] = useState(false);
+  const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+  const [systemAlerts, setSystemAlerts] = useState<Alert[] | null>(null);
 
-  // --- EFECTO PARA CONECTAR AL BACKEND ---
   useEffect(() => {
-    const fetchDashboardData = async () => {
+    let active = true;
+    async function fetchDashboardData() {
+      setIsLoading(true);
+      setLoadError('');
       try {
-        // const res = await fetch('http://localhost:8000/api/v1/dashboard/summary');
-        // const data = await res.json();
-        // setKpis(data.kpis);
-        // setRecentJobs(data.recentJobs);
-        // setSystemAlerts(data.alerts);
+        const summary = await api.get<{
+          kpis: KpiData;
+          recentJobs: Job[];
+          alerts: Alert[] | null;
+        }>('/dashboard/summary');
+        if (!active) return;
+        setKpis(summary.kpis);
+        setRecentJobs(summary.recentJobs);
+        setSystemAlerts(summary.alerts);
       } catch (error) {
-        console.error("Error cargando el dashboard:", error);
+        if (active) setLoadError(errorMessage(error));
+      } finally {
+        if (active) setIsLoading(false);
       }
-    };
-
-    fetchDashboardData();
-  }, []);
+    }
+    void fetchDashboardData();
+    return () => { active = false; };
+  }, [refreshKey]);
 
   // --- TARJETAS KPI ---
   const kpiCards = [
@@ -115,8 +126,8 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="mt-4 flex items-center text-[13px]">
-                <span className={`flex items-center font-medium ${kpi.isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {kpi.isPositive ? <ArrowUpRight size={14} className="mr-1"/> : <ArrowDownRight size={14} className="mr-1"/>}
+                <span className={`flex items-center font-medium ${kpi.trend === '—' ? 'text-slate-400' : kpi.isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {kpi.trend === '—' ? null : kpi.isPositive ? <ArrowUpRight size={14} className="mr-1"/> : <ArrowDownRight size={14} className="mr-1"/>}
                   {kpi.trend}
                 </span>
                 <span className="text-slate-400 ml-1.5">{kpi.subtitle}</span>
@@ -125,6 +136,8 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {loadError && <ErrorState message={loadError} onRetry={() => setRefreshKey(value => value + 1)} />}
 
       {/* SECCIÓN CENTRAL */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -158,16 +171,16 @@ export default function DashboardPage() {
                     {recentJobs.map((job) => (
                       <tr key={job.id} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="px-5 py-3.5">
-                          <div className="font-medium text-slate-900">{job.project}</div>
+                          <div className="font-medium text-slate-900">{job.projectName}</div>
                           <div className="text-slate-500 text-xs flex items-center gap-2 mt-0.5">
                             <span>{job.id}</span>
                             <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                            <span>{job.time}</span>
+                            <span>{new Date(job.startedAt).toLocaleString()}</span>
                           </div>
                         </td>
                         <td className="px-5 py-3.5">
                           <span className="border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium bg-white">
-                            {job.arch}
+                            {job.architecture}
                           </span>
                         </td>
                         <td className="px-5 py-3.5">
@@ -193,7 +206,7 @@ export default function DashboardPage() {
                                 style={{ width: `${job.progress}%` }}
                               ></div>
                             </div>
-                            <span className="text-xs text-slate-500 w-10">{job.epoch}</span>
+                            <span className="text-xs text-slate-500 w-10">{job.epoch}/{job.totalEpochs}</span>
                           </div>
                         </td>
                       </tr>
@@ -222,8 +235,8 @@ export default function DashboardPage() {
             <h2 className="text-[14px] font-medium text-white flex items-center gap-2">
               <Activity size={16} className="text-indigo-400" /> Alertas del Sistema
             </h2>
-            <span className={`text-[11px] font-mono px-2 py-0.5 rounded ${systemAlerts.length > 0 ? 'text-amber-400 bg-amber-400/10' : 'text-slate-500 bg-slate-800'}`}>
-              {systemAlerts.length} Pendientes
+            <span className={`text-[11px] font-mono px-2 py-0.5 rounded ${systemAlerts?.length ? 'text-amber-400 bg-amber-400/10' : 'text-slate-500 bg-slate-800'}`}>
+              {systemAlerts === null ? 'No configuradas' : `${systemAlerts.length} Pendientes`}
             </span>
           </div>
           
@@ -231,6 +244,12 @@ export default function DashboardPage() {
             {isLoading ? (
               <div className="flex justify-center py-10">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-400"></div>
+              </div>
+            ) : systemAlerts === null ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Activity size={24} className="mb-2 text-slate-500" />
+                <p className="text-[13px] text-slate-300">Alertas no configuradas.</p>
+                <p className="text-[11px] text-slate-500">Conecta un servicio de monitoreo para habilitarlas.</p>
               </div>
             ) : systemAlerts.length > 0 ? (
               systemAlerts.map(alert => (

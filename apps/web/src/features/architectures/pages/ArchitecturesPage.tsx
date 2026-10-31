@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
-import { Plus, Save, Play, Settings2, ArrowLeft, Info, CheckCircle2, AlertCircle, Cpu, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, Save, Play, Settings2, ArrowLeft, CheckCircle2, AlertCircle, Cpu, Sparkles } from 'lucide-react';
 import LayerCard from '../components/LayerCard';
 import { Layer } from '../types';
+import { useNavigate } from 'react-router-dom';
+import { api, Page } from '../../../lib/api';
+import { Project } from '../../projects/types';
+import { InlineNotice } from '../../../components/ui/Feedback';
 
 const initialLayers: Layer[] = [
   { id: 'input', type: 'Input', neurons: 784, activation: 'None' },
@@ -9,13 +13,26 @@ const initialLayers: Layer[] = [
 ];
 
 export default function ArchitecturesPage() {
+  const navigate = useNavigate();
   const [family, setFamily] = useState('Feedforward');
   const [layers, setLayers] = useState<Layer[]>(initialLayers);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
-  
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState('');
+  const [architectureName, setArchitectureName] = useState('');
+  const [architectureId, setArchitectureId] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api.get<Page<Project>>('/projects?limit=100')
+      .then(result => { if (active) setProjects(result.items.filter(project => project.status !== 'ARCHIVED')); })
+      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los proyectos.'); });
+    return () => { active = false; };
+  }, []);
 
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
 
@@ -42,37 +59,59 @@ export default function ArchitecturesPage() {
     setLayers(layers.map(l => l.id === id ? { ...l, [field]: value } : l));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!projectId || !architectureName.trim()) {
+      setMessage({ type: 'error', text: 'Selecciona un proyecto y asigna un nombre antes de guardar.' });
+      return;
+    }
     setIsSaving(true);
     setMessage(null);
-    setTimeout(() => {
+    try {
+      const payload = { projectId, name: architectureName.trim(), family, layers };
+      if (architectureId) {
+        await api.patch(`/architectures/${architectureId}`, {
+          name: architectureName.trim(),
+          family,
+          layers,
+        });
+      } else {
+        const saved = await api.post<{ id: string }>('/architectures', payload);
+        setArchitectureId(saved.id);
+      }
+      setMessage({ type: 'success', text: 'Arquitectura guardada en el proyecto.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la arquitectura.' });
+    } finally {
       setIsSaving(false);
-      setMessage({ type: 'success', text: 'Arquitectura guardada en el proyecto exitosamente.' });
-      setTimeout(() => setMessage(null), 3000);
-    }, 1000);
+    }
   };
 
-  const handleCompile = () => {
+  const handleCompile = async () => {
+    if (!architectureId) {
+      setMessage({ type: 'error', text: 'Guarda la arquitectura antes de validar su estructura.' });
+      return;
+    }
     setIsCompiling(true);
     setMessage(null);
-    setTimeout(() => {
+    try {
+      const result = await api.post<{ valid: boolean; errors: string[] }>(`/architectures/${architectureId}/validate`, undefined);
+      setMessage(result.valid
+        ? { type: 'success', text: 'La estructura es válida. La compilación de TensorFlow requiere un worker conectado.' }
+        : { type: 'error', text: result.errors.join(' ') });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo validar la arquitectura.' });
+    } finally {
       setIsCompiling(false);
-      if (layers.length < 3) {
-        setMessage({ type: 'error', text: 'Error de compilación: Añade al menos una capa oculta antes de la salida.' });
-      } else {
-        setMessage({ type: 'success', text: '¡Compilación exitosa! El grafo de TensorFlow está listo.' });
-      }
-      setTimeout(() => setMessage(null), 4000);
-    }, 1500);
+    }
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col space-y-4">
+    <div className="flex min-h-[calc(100dvh-8rem)] flex-col space-y-4 md:h-[calc(100vh-8rem)]">
       
       {/* HEADER MEJORADO */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm gap-4">
         <div className="flex items-center gap-4">
-          <button className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
+          <button onClick={() => navigate('/projects')} aria-label="Volver a proyectos" className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
             <ArrowLeft size={20} />
           </button>
           <div>
@@ -84,6 +123,23 @@ export default function ArchitecturesPage() {
         </div>
         
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          <input
+            value={architectureName}
+            onChange={event => setArchitectureName(event.target.value)}
+            aria-label="Nombre de la arquitectura"
+            placeholder="Nombre de arquitectura"
+            maxLength={120}
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-48"
+          />
+          <select
+            value={projectId}
+            onChange={event => { setProjectId(event.target.value); setArchitectureId(''); }}
+            aria-label="Proyecto de la arquitectura"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm sm:w-48"
+          >
+            <option value="">Selecciona proyecto…</option>
+            {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
           <select 
             value={family}
             onChange={(e) => setFamily(e.target.value)}
@@ -107,7 +163,7 @@ export default function ArchitecturesPage() {
             disabled={isCompiling}
             className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
           >
-            <Play size={16} /> {isCompiling ? 'Compilando...' : 'Compilar Modelo'}
+            <Play size={16} /> {isCompiling ? 'Validando…' : 'Validar estructura'}
           </button>
         </div>
       </div>
@@ -121,12 +177,14 @@ export default function ArchitecturesPage() {
           {message.text}
         </div>
       )}
+      {loadError && <InlineNotice tone="warning">{loadError}</InlineNotice>}
+      <InlineNotice>Este diseñador guarda la topología y valida sus capas; aún no genera ni compila un modelo TensorFlow.</InlineNotice>
 
       {/* ÁREA DE TRABAJO */}
-      <div className="flex-1 flex gap-4 overflow-hidden">
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto md:flex-row md:overflow-hidden">
         
         {/* LIENZO CON FONDO DE PUNTOS MEJORADO */}
-        <div className="flex-1 bg-slate-50/50 rounded-xl border border-slate-200 shadow-inner overflow-y-auto relative">
+        <div className="relative min-h-[420px] flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 shadow-inner md:min-h-0">
           <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#4f46e5 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
           
           <div className="relative z-10 flex flex-col items-center py-10 px-4 min-h-full">
@@ -150,7 +208,7 @@ export default function ArchitecturesPage() {
         </div>
 
         {/* PANEL DE PROPIEDADES OSCURO (Opcional, le da un toque pro) */}
-        <div className="w-80 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+        <div className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:w-80">
           <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Settings2 size={16} className="text-indigo-600" />
@@ -184,7 +242,7 @@ export default function ArchitecturesPage() {
                       type="number" 
                       min="1"
                       value={selectedLayer.neurons} 
-                      onChange={(e) => updateLayer(selectedLayer.id, 'neurons', parseInt(e.target.value) || 0)}
+                      onChange={(e) => updateLayer(selectedLayer.id, 'neurons', Math.max(Number(e.target.value) || 1, 1))}
                       className="w-full text-sm font-mono border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" 
                     />
                   </div>

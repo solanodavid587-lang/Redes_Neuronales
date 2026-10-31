@@ -1,27 +1,20 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FolderKanban, Database, Package, MoreVertical, Calendar } from 'lucide-react';
+import { Archive, FolderKanban, Database, Package, Calendar } from 'lucide-react';
 import { Project } from '../types';
 
-export default function ProjectCard({ project }: { project: Project }) {
-  const navigate = useNavigate();
-
+export default function ProjectCard({ project, onArchive }: { project: Project; onArchive: () => void }) {
+  const lastActivity = new Date(project.lastActivity);
   return (
-    <div 
-      onClick={() => navigate(`/projects/${project.id}`)}
-      className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all group flex flex-col cursor-pointer"
-    >
+    <article className="group flex flex-col rounded-lg border border-slate-200 bg-white shadow-sm transition-all hover:border-indigo-300 hover:shadow-md">
       <div className="p-5 flex-1">
         <div className="flex justify-between items-start mb-3">
           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
             <FolderKanban size={20} />
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); /* Aquí abrirías un menú de opciones */ }}
-            className="text-slate-400 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <MoreVertical size={18} />
-          </button>
+          {project.status !== 'ARCHIVED' && (
+            <button type="button" onClick={onArchive} aria-label={`Archivar ${project.name}`} title="Archivar proyecto" className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100">
+              <Archive size={16} />
+            </button>
+          )}
         </div>
         
         <h3 className="text-[15px] font-semibold text-slate-900 truncate" title={project.name}>
@@ -46,7 +39,7 @@ export default function ProjectCard({ project }: { project: Project }) {
       <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 rounded-b-lg flex items-center justify-between text-[12px] text-slate-500">
         <div className="flex items-center gap-1.5">
           <Calendar size={13} />
-          <span>{project.lastActivity}</span>
+          <span>{Number.isNaN(lastActivity.getTime()) ? 'Sin actividad' : lastActivity.toLocaleDateString()}</span>
         </div>
         <span className={`px-2 py-0.5 rounded-full font-medium
           ${project.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : ''}
@@ -56,6 +49,6 @@ export default function ProjectCard({ project }: { project: Project }) {
           {project.status === 'ACTIVE' ? 'Activo' : project.status === 'DRAFT' ? 'Borrador' : 'Archivado'}
         </span>
       </div>
-    </div>
+    </article>
   );
 }

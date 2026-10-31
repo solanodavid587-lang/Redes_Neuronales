@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import { useId } from 'react';
 
 export default function Logo({ className = "" }: { className?: string }) {
   // useId genera un identificador único para evitar conflictos de gradientes

@@ -1,119 +1,91 @@
-import React from 'react';
-import { X, Package, Download, ShieldCheck, Box, Clock, User, Fingerprint } from 'lucide-react';
-import { ModelVersion } from '../types';
+import { useState } from 'react';
+import { Box, Clock, Fingerprint, Package, ShieldCheck, User, X } from 'lucide-react';
+import type { ModelStatus, ModelVersion } from '../types';
+import { InlineNotice } from '../../../components/ui/Feedback';
 
 interface Props {
   model: ModelVersion;
   onClose: () => void;
+  onStatusChange: (status: ModelStatus) => Promise<void>;
+  error: string;
 }
 
-export default function ModelDetailsPanel({ model, onClose }: Props) {
-  // Simula la descarga del archivo del modelo
-  const handleDownload = () => {
-    // En un entorno real, aquí harías un fetch a Supabase Storage o S3
-    // Ejemplo: window.open(model.downloadUrl, '_blank');
-    
-    // Simulamos la creación de un archivo falso para que el navegador lo descargue
-    const blob = new Blob(["Contenido simulado del modelo TensorFlow"], { type: 'application/octet-stream' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${model.name}_${model.version}.${model.format.toLowerCase() === 'h5' ? 'h5' : 'zip'}`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  };
+const nextStatuses: Record<ModelStatus, ModelStatus[]> = {
+  DRAFT: ['REVIEW', 'RETIRED'],
+  REVIEW: ['APPROVED', 'DRAFT', 'RETIRED'],
+  APPROVED: ['RETIRED'],
+  RETIRED: [],
+};
+
+const statusNames: Record<ModelStatus, string> = {
+  DRAFT: 'Borrador',
+  REVIEW: 'En revisión',
+  APPROVED: 'Aprobado',
+  RETIRED: 'Retirado',
+};
+
+export default function ModelDetailsPanel({ model, onClose, onStatusChange, error }: Props) {
+  const [updating, setUpdating] = useState(false);
+
+  async function changeStatus(status: ModelStatus) {
+    setUpdating(true);
+    try {
+      await onStatusChange(status);
+    } finally {
+      setUpdating(false);
+    }
+  }
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-in slide-in-from-right duration-300">
-      {/* HEADER */}
-      <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
-            <Package size={20} />
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/30" onMouseDown={event => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <aside role="dialog" aria-modal="true" aria-labelledby="model-details-title" className="flex h-full w-full max-w-[450px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-slate-50 px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="rounded-lg bg-indigo-100 p-2 text-indigo-600"><Package size={20} /></div>
+            <div className="min-w-0"><h2 id="model-details-title" className="truncate text-sm font-semibold text-slate-900">{model.name} <span className="font-normal text-slate-500">({model.version})</span></h2><p className="truncate text-xs text-slate-500">{model.projectName}</p></div>
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">{model.name} <span className="text-xs font-normal text-slate-500">({model.version})</span></h2>
-            <p className="text-xs text-slate-500">{model.projectName}</p>
-          </div>
-        </div>
-        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-md text-slate-500 transition-colors">
-          <X size={18} />
-        </button>
-      </div>
+          <button onClick={onClose} aria-label="Cerrar detalles" className="rounded p-2 text-slate-500 hover:bg-slate-200"><X size={18} /></button>
+        </header>
 
-      <div className="p-6 flex-1 overflow-y-auto space-y-6">
-        
-        {/* ESTADO */}
-        <div>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Estado del Ciclo de Vida</h3>
-          <div className={`p-3 rounded-lg border flex items-center gap-3
-            ${model.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : ''}
-            ${model.status === 'DRAFT' ? 'bg-slate-50 border-slate-200 text-slate-700' : ''}
-            ${model.status === 'REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-800' : ''}
-            ${model.status === 'RETIRED' ? 'bg-red-50 border-red-200 text-red-800' : ''}
-          `}>
-            <ShieldCheck size={20} />
-            <div>
-              <p className="text-sm font-semibold">
-                {model.status === 'APPROVED' ? 'Aprobado para Producción' : 
-                 model.status === 'DRAFT' ? 'Borrador' : 
-                 model.status === 'REVIEW' ? 'En Revisión' : 'Retirado'}
-              </p>
-              <p className="text-xs opacity-80">
-                {model.status === 'APPROVED' ? 'Listo para ser desplegado vía API.' : 'Requiere aprobación del equipo de MLOps.'}
-              </p>
+        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Ciclo de vida</h3>
+            <div className={`flex items-center gap-3 rounded-lg border p-3 ${model.status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : model.status === 'REVIEW' ? 'border-amber-200 bg-amber-50 text-amber-800' : model.status === 'RETIRED' ? 'border-red-200 bg-red-50 text-red-800' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+              <ShieldCheck size={20} /><div><p className="text-sm font-semibold">{statusNames[model.status]}</p><p className="text-xs opacity-80">Metadatos y estado de revisión</p></div>
             </div>
-          </div>
-        </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {nextStatuses[model.status].map(status => (
+                <button key={status} disabled={updating} onClick={() => void changeStatus(status)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {status === 'REVIEW' ? 'Solicitar revisión' : status === 'APPROVED' ? 'Aprobar' : status === 'RETIRED' ? 'Retirar' : 'Volver a borrador'}
+                </button>
+              ))}
+            </div>
+            {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+          </section>
 
-        {/* METADATOS CLAVE */}
-        <div>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Metadatos del Artefacto</h3>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-              <span className="text-slate-500 flex items-center gap-2"><Box size={14}/> Arquitectura</span>
-              <span className="font-medium text-slate-800">{model.architecture}</span>
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Metadatos del artefacto</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between gap-3 border-b border-slate-100 py-1"><span className="flex items-center gap-2 text-slate-500"><Box size={14} /> Arquitectura</span><span className="text-right font-medium text-slate-800">{model.architecture}</span></div>
+              <div className="flex justify-between gap-3 border-b border-slate-100 py-1"><span className="flex items-center gap-2 text-slate-500"><Fingerprint size={14} /> Formato</span><span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700">{model.format}</span></div>
+              <div className="flex justify-between gap-3 border-b border-slate-100 py-1"><span className="flex items-center gap-2 text-slate-500"><ShieldCheck size={14} /> Exactitud</span><span className="font-bold text-emerald-600">{model.accuracy}</span></div>
+              <div className="flex justify-between gap-3 border-b border-slate-100 py-1"><span className="flex items-center gap-2 text-slate-500"><Clock size={14} /> Tamaño</span><span className="font-medium text-slate-800">{model.size}</span></div>
+              <div className="flex justify-between gap-3 border-b border-slate-100 py-1"><span className="flex items-center gap-2 text-slate-500"><User size={14} /> Autor</span><span className="font-medium text-slate-800">{model.createdBy}</span></div>
+              <div className="flex justify-between gap-3 py-1"><span className="text-slate-500">Creado</span><span className="font-medium text-slate-800">{new Date(model.createdAt).toLocaleString()}</span></div>
             </div>
-            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-              <span className="text-slate-500 flex items-center gap-2"><Fingerprint size={14}/> Formato</span>
-              <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-700">{model.format}</span>
-            </div>
-            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-              <span className="text-slate-500 flex items-center gap-2"><ShieldCheck size={14}/> Accuracy</span>
-              <span className="font-bold text-emerald-600">{model.accuracy}</span>
-            </div>
-            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-              <span className="text-slate-500 flex items-center gap-2"><Clock size={14}/> Tamaño</span>
-              <span className="font-medium text-slate-800">{model.size}</span>
-            </div>
-            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-              <span className="text-slate-500 flex items-center gap-2"><User size={14}/> Autor</span>
-              <span className="font-medium text-slate-800">{model.createdBy}</span>
-            </div>
-          </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Checksum</h3>
+            <div className="break-all rounded-lg bg-slate-900 p-3 font-mono text-[11px] leading-relaxed text-emerald-400">{model.checksum || 'No registrado'}</div>
+          </section>
+          <InlineNotice tone="warning">El registro contiene metadatos; el archivo binario no está almacenado ni disponible para descarga.</InlineNotice>
         </div>
 
-        {/* CHECKSUM */}
-        <div>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Trazabilidad (Checksum)</h3>
-          <div className="bg-slate-900 p-3 rounded-lg font-mono text-[11px] text-emerald-400 break-all leading-relaxed">
-            SHA256: {model.checksum}
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2">Este hash garantiza que el archivo no ha sido alterado desde su entrenamiento.</p>
-        </div>
-      </div>
-
-      {/* ACCIONES */}
-      <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-3">
-        <button 
-          onClick={handleDownload}
-          className="flex-1 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm flex items-center justify-center gap-2"
-        >
-          <Download size={16} /> Descargar Modelo
-        </button>
-      </div>
+        <footer className="border-t border-slate-200 bg-slate-50 p-4 text-right"><button onClick={onClose} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-100">Cerrar</button></footer>
+      </aside>
     </div>
   );
 }

@@ -1,108 +1,125 @@
-import React, { useState } from 'react';
-import { Search, Plus, Filter, FolderKanban, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useLocation } from 'react-router-dom';
+import { FolderKanban, Plus, Search, X } from 'lucide-react';
 import ProjectCard from '../components/ProjectCard';
-import { Project } from '../types';
+import type { Project } from '../types';
+import { api } from '../../../lib/api';
+import { useApiResource } from '../../../hooks/useApiResource';
+import { ErrorState, LoadingState } from '../../../components/ui/Feedback';
 
 export default function ProjectsPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const location = useLocation();
+  const { data, loading, error, reload } = useApiResource<Project>('/projects?limit=100');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
 
-  // ESTADO VACÍO: Aquí conectarás tu API de Supabase
-  const [projects] = useState<Project[]>([]);
+  useEffect(() => {
+    if (location.state?.openNew) setModalOpen(true);
+  }, [location.state]);
 
-  const filteredProjects = projects.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const projects = useMemo(() => (data?.items ?? []).filter(project => {
+    const matchesText = `${project.name} ${project.description}`.toLowerCase().includes(search.toLowerCase());
+    return matchesText && (statusFilter === 'ALL' || project.status === statusFilter);
+  }), [data, search, statusFilter]);
+
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError('');
+    try {
+      await api.post<Project>('/projects', { name: name.trim(), description: description.trim() });
+      setName('');
+      setDescription('');
+      setModalOpen(false);
+      reload();
+    } catch (requestError) {
+      setFormError(requestError instanceof Error ? requestError.message : 'No se pudo crear el proyecto.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function archiveProject(project: Project) {
+    if (!window.confirm(`¿Archivar el proyecto "${project.name}"?`)) return;
+    setActionError('');
+    try {
+      await api.delete(`/projects/${project.id}`);
+      reload();
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo archivar el proyecto.');
+    }
+  }
 
   return (
-    <div className="space-y-6 relative">
-      
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Proyectos</h1>
-          <p className="text-sm text-slate-500 mt-1">Administra tus espacios de trabajo y experimentos de IA.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Proyectos</h1>
+          <p className="mt-1 text-sm text-slate-500">Administra tus espacios de trabajo y experimentos de IA.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="px-3.5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors flex items-center justify-center gap-2"
-        >
-          <Plus size={16} /> Nuevo Proyecto
+        <button onClick={() => setModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700">
+          <Plus size={16} /> Nuevo proyecto
         </button>
+      </header>
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <label className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={event => setSearch(event.target.value)} aria-label="Buscar proyectos" placeholder="Buscar por nombre o descripción…" className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-4 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+        </label>
+        <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Filtrar por estado" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+          <option value="ALL">Todos los estados</option>
+          <option value="ACTIVE">Activos</option>
+          <option value="DRAFT">Borradores</option>
+          <option value="ARCHIVED">Archivados</option>
+        </select>
       </div>
 
-      {/* BARRA DE HERRAMIENTAS */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input 
-            type="text" 
-            placeholder="Buscar proyectos..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all shadow-sm"
-          />
-        </div>
-        <button className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 shadow-sm flex items-center justify-center gap-2">
-          <Filter size={16} /> Filtros
-        </button>
-      </div>
-
-      {/* CUADRÍCULA DE PROYECTOS O ESTADO VACÍO */}
-      {filteredProjects.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filteredProjects.map(project => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-24 bg-white rounded-lg border border-slate-200 border-dashed">
-          <FolderKanban size={48} className="mx-auto text-slate-300 mb-4" />
-          <h3 className="text-lg font-medium text-slate-900">No hay proyectos aún</h3>
-          <p className="text-slate-500 mt-1 max-w-sm mx-auto">Crea tu primer proyecto para empezar a diseñar redes neuronales y entrenar modelos.</p>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="mt-5 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
-          >
-            Crear mi primer proyecto
-          </button>
-        </div>
+      {actionError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
+      {error ? <ErrorState message={error} onRetry={reload} /> : loading ? <LoadingState /> : (
+        projects.length ? (
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {projects.map(project => <ProjectCard key={project.id} project={project} onArchive={() => archiveProject(project)} />)}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white py-20 text-center">
+            <FolderKanban size={40} className="mx-auto mb-4 text-slate-300" />
+            <h2 className="font-semibold text-slate-900">{search || statusFilter !== 'ALL' ? 'No hay resultados' : 'No hay proyectos aún'}</h2>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">Crea un proyecto para organizar datasets, arquitecturas y entrenamientos.</p>
+            {!search && statusFilter === 'ALL' && <button onClick={() => setModalOpen(true)} className="mt-5 rounded-md bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100">Crear mi primer proyecto</button>}
+          </div>
+        )
       )}
 
-      {/* MODAL DE NUEVO PROYECTO */}
-      {isModalOpen && (
-        <>
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50" onClick={() => setIsModalOpen(false)}></div>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md pointer-events-auto animate-in zoom-in-95 duration-200">
-              <div className="flex justify-between items-center p-5 border-b border-slate-200">
-                <h2 className="text-lg font-semibold text-slate-900">Crear Nuevo Proyecto</h2>
-                <button onClick={() => setIsModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-700">
-                  <X size={20} />
-                </button>
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
+          <button aria-label="Cerrar modal" className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setModalOpen(false)} />
+          <section role="dialog" aria-modal="true" aria-labelledby="create-project-title" className="relative w-full max-w-md rounded-xl bg-white shadow-2xl">
+            <header className="flex items-center justify-between border-b border-slate-200 p-5">
+              <h2 id="create-project-title" className="text-lg font-semibold">Crear proyecto</h2>
+              <button onClick={() => setModalOpen(false)} aria-label="Cerrar" className="rounded p-1 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+            </header>
+            <form onSubmit={handleCreate} className="space-y-4 p-5">
+              <label className="block text-sm font-medium text-slate-700">Nombre
+                <input autoFocus required maxLength={120} value={name} onChange={event => setName(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Descripción
+                <textarea rows={3} maxLength={4000} value={description} onChange={event => setDescription(event.target.value)} className="mt-1 w-full resize-none rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" />
+              </label>
+              {formError && <p role="alert" className="text-sm text-red-700">{formError}</p>}
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+                <button disabled={saving} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? 'Guardando…' : 'Crear proyecto'}</button>
               </div>
-              <form className="p-5 space-y-4" onSubmit={(e) => { 
-                e.preventDefault(); 
-                alert("Proyecto creado y guardado en Supabase (Simulación)"); 
-                setIsModalOpen(false); 
-              }}>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Nombre del Proyecto</label>
-                  <input type="text" required placeholder="Ej. Predicción de Ventas" className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Descripción</label>
-                  <textarea rows={3} placeholder="Describe el objetivo..." className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none text-sm resize-none"></textarea>
-                </div>
-                <div className="pt-2 flex justify-end gap-3">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">Cancelar</button>
-                  <button type="submit" className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Crear Proyecto</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </>
+            </form>
+          </section>
+        </div>
       )}
     </div>
   );

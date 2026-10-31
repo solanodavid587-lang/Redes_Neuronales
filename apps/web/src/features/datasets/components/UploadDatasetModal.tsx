@@ -1,136 +1,147 @@
-import React, { useState, useRef } from 'react';
-import { X, UploadCloud, File, CheckCircle2 } from 'lucide-react';
+import { useRef, useState, type DragEvent } from 'react';
+import { CheckCircle2, File, UploadCloud, X } from 'lucide-react';
+import { useAuth } from '../../../auth/AuthProvider';
+import { api } from '../../../lib/api';
+import { datasetBucket, supabase } from '../../../lib/supabase';
+import type { DatasetFormat } from '../types';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onUploaded: () => void;
 }
 
-export default function UploadDatasetModal({ isOpen, onClose }: Props) {
-  const [isDragging, setIsDragging] = useState(false);
+const maxFileSize = 50 * 1024 * 1024;
+
+function getFormat(file: File): DatasetFormat | null {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'csv') return 'CSV';
+  if (extension === 'json') return 'JSON';
+  if (extension === 'zip') return 'IMAGES';
+  if (extension === 'txt') return 'TEXT';
+  return null;
+}
+
+export default function UploadDatasetModal({ isOpen, onClose, onUploaded }: Props) {
+  const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
+  const [trainSplit, setTrainSplit] = useState(80);
+  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
+  function chooseFile(nextFile?: File) {
+    if (!nextFile) return;
+    if (!getFormat(nextFile)) {
+      setError('Formato no admitido. Selecciona un archivo CSV, JSON, ZIP o TXT.');
+      return;
     }
-  };
+    if (nextFile.size > maxFileSize) {
+      setError('El tamaño máximo permitido en esta carga directa es 50 MB.');
+      return;
+    }
+    setError('');
+    setFile(nextFile);
+  }
 
-  const handleUpload = () => {
-    if (!file) return;
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    chooseFile(event.dataTransfer.files[0]);
+  }
+
+  async function handleUpload() {
+    if (!file || !user || !supabase) return;
+    const format = getFormat(file);
+    if (!format) return;
     setIsUploading(true);
-    
-    // Simulamos la subida a MinIO/S3 y la inserción en Supabase
-    setTimeout(() => {
-      setIsUploading(false);
-      alert(`Archivo "${file.name}" subido y registrado exitosamente.`);
-      setFile(null);
+    setError('');
+    const objectPath = `${user.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]/g, '_')}`;
+    let uploaded = false;
+    try {
+      const { error: storageError } = await supabase.storage
+        .from(datasetBucket)
+        .upload(objectPath, file, { contentType: file.type || 'application/octet-stream' });
+      if (storageError) throw storageError;
+      uploaded = true;
+      await api.post('/datasets', {
+        name: file.name,
+        format,
+        sizeBytes: file.size,
+        rows: 0,
+        trainSplit: trainSplit / 100,
+        valSplit: (100 - trainSplit) / 100,
+        storagePath: `${datasetBucket}/${objectPath}`,
+      });
+      onUploaded();
       onClose();
-    }, 2000);
-  };
+      setFile(null);
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : 'No se pudo subir el dataset.';
+      if (uploaded) {
+        const { error: cleanupError } = await supabase.storage.from(datasetBucket).remove([objectPath]);
+        setError(cleanupError
+          ? `${message} El archivo quedó en Storage (${objectPath}); elimínalo manualmente.`
+          : message);
+      } else {
+        setError(message);
+      }
+    } finally {
+      setIsUploading(false);
+    }
+  }
 
   return (
-    <>
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 transition-opacity" onClick={onClose}></div>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg pointer-events-auto animate-in zoom-in-95 duration-200">
-          
-          <div className="flex justify-between items-center p-5 border-b border-slate-200">
-            <h2 className="text-lg font-semibold text-slate-900">Subir Nuevo Dataset</h2>
-            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors">
-              <X size={20} />
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button aria-label="Cerrar modal" disabled={isUploading} onClick={onClose} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm disabled:cursor-wait" />
+      <section role="dialog" aria-modal="true" aria-labelledby="upload-dataset-title" className="relative w-full max-w-lg rounded-xl bg-white shadow-2xl">
+        <header className="flex items-center justify-between border-b border-slate-200 p-5">
+          <h2 id="upload-dataset-title" className="text-lg font-semibold">Subir dataset</h2>
+          <button onClick={onClose} disabled={isUploading} aria-label="Cerrar" className="rounded p-1 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+        </header>
+        <div className="space-y-5 p-6">
+          <div
+            role="button"
+            tabIndex={0}
+            onKeyDown={event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            onDragOver={event => { event.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center outline-none transition-colors focus:ring-2 focus:ring-indigo-500 ${
+              isDragging ? 'border-indigo-500 bg-indigo-50' : file ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'
+            }`}
+          >
+            <input ref={fileInputRef} type="file" accept=".csv,.json,.zip,.txt" className="sr-only" onClick={event => event.stopPropagation()} onChange={event => chooseFile(event.target.files?.[0])} />
+            {file ? <File size={28} className="mb-3 text-emerald-600" /> : <UploadCloud size={28} className="mb-3 text-indigo-600" />}
+            <span className="text-sm font-medium text-slate-800">{file?.name ?? 'Haz clic o arrastra un archivo aquí'}</span>
+            <span className="mt-1 text-xs text-slate-500">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'CSV, JSON, ZIP o TXT · máximo 50 MB'}</span>
           </div>
-          
-          <div className="p-6 space-y-5">
-            {/* DRAG & DROP ZONE */}
-            <div 
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center
-                ${isDragging ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'}
-                ${file ? 'bg-slate-50 border-emerald-300' : ''}
-              `}
-            >
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                className="hidden" 
-                accept=".csv,.json,.zip,.txt"
-                onChange={(e) => { if (e.target.files) setFile(e.target.files[0]) }}
-              />
-              
-              {file ? (
-                <>
-                  <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-3">
-                    <File size={24} />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-800">{file.name}</p>
-                  <p className="text-xs text-slate-500 mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                </>
-              ) : (
-                <>
-                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-3">
-                    <UploadCloud size={24} />
-                  </div>
-                  <p className="text-sm font-medium text-slate-700">Haz clic o arrastra un archivo aquí</p>
-                  <p className="text-xs text-slate-500 mt-1">Soporta CSV, JSON, ZIP (Imágenes) o TXT. Máx 2GB.</p>
-                </>
-              )}
-            </div>
-
-            {/* OPCIONES EXTRA (Si hay archivo) */}
-            {file && (
-              <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-2">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">División Train %</label>
-                  <input type="number" defaultValue={80} min={1} max={99} className="w-full text-sm border border-slate-300 rounded px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">División Val %</label>
-                  <input type="number" defaultValue={20} min={1} max={99} disabled className="w-full text-sm bg-slate-100 border border-slate-200 rounded px-3 py-2 text-slate-500" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-xl">
-            <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
-              Cancelar
-            </button>
-            <button 
-              onClick={handleUpload} 
-              disabled={!file || isUploading}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isUploading ? (
-                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Subiendo...</>
-              ) : (
-                <><CheckCircle2 size={16} /> Confirmar Subida</>
-              )}
-            </button>
-          </div>
-
+          {file && (
+            <label className="block text-sm font-medium text-slate-700">
+              División para entrenamiento: {trainSplit}%
+              <input type="range" min={1} max={99} value={trainSplit} onChange={event => setTrainSplit(Number(event.target.value))} className="mt-2 w-full accent-indigo-600" />
+              <span className="flex justify-between text-xs font-normal text-slate-500"><span>Train {trainSplit}%</span><span>Validación {100 - trainSplit}%</span></span>
+            </label>
+          )}
+          {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          <p className="text-xs text-slate-500">El archivo se almacena en Supabase Storage. El bucket y sus políticas de acceso deben estar configurados.</p>
         </div>
-      </div>
-    </>
+        <footer className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 p-4">
+          <button onClick={onClose} disabled={isUploading} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
+          <button onClick={handleUpload} disabled={!file || isUploading} className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+            {isUploading ? 'Subiendo…' : <><CheckCircle2 size={16} /> Subir dataset</>}
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }

@@ -1,118 +1,161 @@
-import React, { useState } from 'react';
-import { X, PlayCircle, Server, Database, BrainCircuit } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { BrainCircuit, Database, PlayCircle, Server, X } from 'lucide-react';
+import type { Page } from '../../../lib/api';
+import { api } from '../../../lib/api';
+import { ErrorState, LoadingState } from '../../../components/ui/Feedback';
+import type { Project } from '../../projects/types';
+import type { Dataset } from '../../datasets/types';
+import type { Layer } from '../../architectures/types';
+
+interface ArchitectureOption {
+  id: string;
+  projectId: string | null;
+  name: string;
+  family: string;
+  layers: Layer[];
+}
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  onCreated: () => void;
 }
 
-export default function NewTrainingModal({ isOpen, onClose }: Props) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+export default function NewTrainingModal({ isOpen, onClose, onCreated }: Props) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [architectures, setArchitectures] = useState<ArchitectureOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [projectId, setProjectId] = useState('');
+  const [datasetId, setDatasetId] = useState('');
+  const [architectureId, setArchitectureId] = useState('');
+  const [epochs, setEpochs] = useState(10);
+  const [batchSize, setBatchSize] = useState(32);
+  const [optimizer, setOptimizer] = useState('adam');
+  const [learningRate, setLearningRate] = useState('0.001');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    setLoading(true);
+    setError('');
+    Promise.all([
+      api.get<Page<Project>>('/projects?limit=100'),
+      api.get<Page<Dataset>>('/datasets?limit=100'),
+      api.get<Page<ArchitectureOption>>('/architectures?limit=100'),
+    ]).then(([projectPage, datasetPage, architecturePage]) => {
+      if (!active) return;
+      setProjects(projectPage.items);
+      setDatasets(datasetPage.items);
+      setArchitectures(architecturePage.items);
+    }).catch(loadError => {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'No se pudieron cargar los recursos.');
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [isOpen]);
+
+  const projectDatasets = useMemo(() => datasets.filter(item =>
+    item.status === 'READY' && (!item.projectId || item.projectId === projectId),
+  ), [datasets, projectId]);
+  const projectArchitectures = useMemo(() => architectures.filter(item =>
+    item.projectId === projectId,
+  ), [architectures, projectId]);
+
+  function changeProject(nextProjectId: string) {
+    setProjectId(nextProjectId);
+    setDatasetId('');
+    setArchitectureId('');
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.post('/training-jobs', {
+        projectId,
+        datasetId,
+        architectureId,
+        totalEpochs: epochs,
+        configuration: { batchSize, optimizer, learningRate: Number(learningRate) },
+      });
+      onCreated();
+      onClose();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'No se pudo encolar el entrenamiento.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    // Simulamos el envío del job a la cola de FastAPI
-    setTimeout(() => {
-      setIsSubmitting(false);
-      alert("Trabajo de entrenamiento encolado exitosamente.");
-      onClose();
-    }, 1500);
-  };
-
   return (
-    <>
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 transition-opacity" onClick={onClose}></div>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl pointer-events-auto animate-in zoom-in-95 duration-200">
-          
-          <div className="flex justify-between items-center p-5 border-b border-slate-200">
-            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-              <PlayCircle className="text-indigo-600" size={20} /> Nuevo Entrenamiento
-            </h2>
-            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 rounded">
-              <X size={20} />
-            </button>
-          </div>
-          
-          <form onSubmit={handleSubmit} className="p-5 space-y-4">
-            
-            {/* SELECCIÓN DE RECURSOS */}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
-                  <BrainCircuit size={14} className="text-slate-400" /> Arquitectura
-                </label>
-                <select required className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none">
-                  <option value="">Selecciona una arquitectura...</option>
-                  <option value="1">Feedforward - Predicción Ventas (v1)</option>
-                  <option value="2">CNN - Clasificación Imágenes (v2)</option>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button aria-label="Cerrar modal" onClick={onClose} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+      <section role="dialog" aria-modal="true" aria-labelledby="new-training-title" className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+        <header className="flex items-center justify-between border-b border-slate-200 p-5">
+          <h2 id="new-training-title" className="flex items-center gap-2 text-lg font-semibold"><PlayCircle className="text-indigo-600" size={20} /> Nuevo entrenamiento</h2>
+          <button onClick={onClose} aria-label="Cerrar" className="rounded p-1 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+        </header>
+        {loading ? <LoadingState label="Cargando proyectos y recursos…" /> : (
+          <form onSubmit={handleSubmit} className="space-y-5 p-5">
+            {error && <ErrorState message={error} />}
+            <label className="block text-sm font-medium text-slate-700">Proyecto
+              <select required value={projectId} onChange={event => changeProject(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2">
+                <option value="">Selecciona un proyecto…</option>
+                {projects.filter(project => project.status !== 'ARCHIVED').map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-700"><span className="flex items-center gap-2"><BrainCircuit size={14} /> Arquitectura</span>
+                <select required disabled={!projectId} value={architectureId} onChange={event => setArchitectureId(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-50">
+                  <option value="">Selecciona arquitectura…</option>
+                  {projectArchitectures.map(item => <option key={item.id} value={item.id}>{item.name} · {item.family}</option>)}
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2">
-                  <Database size={14} className="text-slate-400" /> Dataset
-                </label>
-                <select required className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none">
-                  <option value="">Selecciona un dataset...</option>
-                  <option value="1">ventas_historicas_2026.csv</option>
-                  <option value="2">radiografias_torax.zip</option>
+                {projectId && !projectArchitectures.length && <span className="mt-1 block text-xs text-amber-700">Este proyecto aún no tiene arquitecturas guardadas.</span>}
+              </label>
+              <label className="block text-sm font-medium text-slate-700"><span className="flex items-center gap-2"><Database size={14} /> Dataset</span>
+                <select required disabled={!projectId} value={datasetId} onChange={event => setDatasetId(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-50">
+                  <option value="">Selecciona dataset…</option>
+                  {projectDatasets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-              </div>
+                {projectId && !projectDatasets.length && <span className="mt-1 block text-xs text-amber-700">No hay datasets listos para este proyecto.</span>}
+              </label>
             </div>
-
-            <div className="h-px w-full bg-slate-100 my-2"></div>
-
-            {/* HIPERPARÁMETROS */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Épocas (Epochs)</label>
-                <input type="number" defaultValue={100} min={1} className="w-full text-sm font-mono border border-slate-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Batch Size</label>
-                <select className="w-full text-sm font-mono border border-slate-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="32">32</option>
-                  <option value="64">64</option>
-                  <option value="128">128</option>
-                  <option value="256">256</option>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-700">Épocas
+                <input type="number" required min={1} max={10000} value={epochs} onChange={event => setEpochs(Number(event.target.value))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Batch size
+                <select value={batchSize} onChange={event => setBatchSize(Number(event.target.value))} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono">
+                  {[32, 64, 128, 256].map(size => <option key={size} value={size}>{size}</option>)}
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Optimizador</label>
-                <select className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="adam">Adam</option>
-                  <option value="sgd">SGD</option>
-                  <option value="rmsprop">RMSprop</option>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Optimizador
+                <select value={optimizer} onChange={event => setOptimizer(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2">
+                  <option value="adam">Adam</option><option value="sgd">SGD</option><option value="rmsprop">RMSprop</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Learning Rate</label>
-                <input type="text" defaultValue="0.001" className="w-full text-sm font-mono border border-slate-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Learning rate
+                <input type="number" required min="0.000001" max="1" step="any" value={learningRate} onChange={event => setLearningRate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono" />
+              </label>
             </div>
-
-            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-start gap-3 mt-4">
-              <Server size={18} className="text-indigo-600 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-indigo-900">Cola de Entrenamiento</p>
-                <p className="text-[11px] text-indigo-700 mt-0.5">El job se enviará a los workers de TensorFlow. El progreso se verá reflejado en tiempo real.</p>
-              </div>
+            <div className="flex gap-3 rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-indigo-900">
+              <Server size={18} className="mt-0.5 shrink-0" />
+              <p className="text-xs">El trabajo se guardará en la cola. La ejecución requiere un worker conectado; el estado no cambiará hasta que el worker envíe métricas.</p>
             </div>
-
-            <div className="pt-4 flex justify-end gap-3 border-t border-slate-200">
-              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
-                Cancelar
-              </button>
-              <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-                {isSubmitting ? 'Encolando...' : 'Iniciar Entrenamiento'}
-              </button>
-            </div>
+            <footer className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+              <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+              <button type="submit" disabled={submitting || !projectId || !datasetId || !architectureId} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? 'Encolando…' : 'Crear trabajo'}</button>
+            </footer>
           </form>
-        </div>
-      </div>
-    </>
+        )}
+      </section>
+    </div>
   );
 }

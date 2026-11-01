@@ -9,22 +9,12 @@ envVarGroups:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
-      - key: S3_BUCKET
-        sync: false
-      - key: S3_REGION
-        sync: false
-      - key: S3_ENDPOINT_URL
-        sync: false
-      - key: S3_ACCESS_KEY_ID
-        sync: false
-      - key: S3_SECRET_ACCESS_KEY
-        sync: false
 
 services:
   - type: web
     name: neurolab-api
     runtime: docker
-    plan: starter
+    plan: free
     rootDir: apps/api
     dockerfilePath: ./Dockerfile
     preDeployCommand: alembic upgrade head
@@ -46,27 +36,4 @@ services:
       - key: HF_TOKEN
         sync: false
       - key: HF_DATASET_REPO_ID
-        sync: false
-
-  - type: worker
-    name: neurolab-training-worker
-    runtime: docker
-    plan: starter
-    rootDir: workers
-    dockerfilePath: ./Dockerfile
-    envVars:
-      - fromGroup: neurolab-shared
-      - key: NEUROLAB_API_URL
-        value: http://neurolab-api:10000/api/v1
-      - key: MODEL_STORAGE_DIR
-        value: /tmp/neurolab-artifacts
-
-  - type: web
-    name: neurolab-web
-    runtime: static
-    rootDir: apps/web
-    buildCommand: npm ci && npm run build
-    staticPublishPath: ./dist
-    envVars:
-      - key: VITE_API_BASE_URL
         sync: false

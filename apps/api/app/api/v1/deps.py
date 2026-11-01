@@ -16,6 +16,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if credentials is None:
         raise HTTPException(
@@ -50,7 +51,13 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="El token no contiene un identificador de usuario.",
         )
-    return claims
+    account = db.get(User, str(claims["sub"]))
+    if account is None or not account.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="La cuenta no existe o está desactivada.",
+        )
+    return {**claims, "email": account.email, "role": account.role}
 
 
 def get_user_id(user: dict[str, Any]) -> str:
@@ -77,6 +84,27 @@ def require_admin(
             detail="Se requiere el rol ADMIN para esta operación.",
         )
     return {**claims, "email": account.email, "role": account.role}
+
+
+def require_roles(*allowed_roles: str):
+    def dependency(
+        claims: dict[str, Any] = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> dict[str, Any]:
+        account = db.get(User, get_user_id(claims))
+        if account is None or not account.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="La cuenta no existe o está desactivada.",
+            )
+        if account.role != "ADMIN" and account.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu rol no tiene permiso para realizar esta operación.",
+            )
+        return {**claims, "email": account.email, "role": account.role}
+
+    return dependency
 
 
 def require_worker(

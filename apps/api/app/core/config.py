@@ -13,10 +13,18 @@ class Settings(BaseSettings):
     db_database: str | None = None
     db_username: str | None = None
     db_password: str | None = None
+    dataset_storage_dir: Path = Path("data/datasets")
     supabase_url: str
     supabase_jwt_secret: str | None = None
     auth_token_secret: str | None = None
     worker_api_key: str | None = None
+    s3_bucket: str | None = None
+    s3_region: str = "us-east-1"
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    hf_token: str | None = None
+    hf_dataset_repo_id: str | None = None
     cors_origins: list[str] = ["http://localhost:5173"]
     log_level: str = "INFO"
 

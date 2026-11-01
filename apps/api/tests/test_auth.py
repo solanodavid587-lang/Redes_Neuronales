@@ -8,6 +8,8 @@ from app.db.session import engine
 
 def test_admin_can_create_users_but_engineer_cannot(client):
     with Session(engine) as db:
+        test_account = db.get(User, "test-user")
+        db.delete(test_account)
         db.add_all(
             [
                 User(
@@ -61,6 +63,32 @@ def test_admin_can_create_users_but_engineer_cannot(client):
     assert created.status_code == 201
     assert created.json()["role"] == "REVIEWER"
     assert "password_hash" not in created.json()
+
+    updated = client.patch(
+        f"/api/v1/auth/users/{created.json()['id']}",
+        headers=headers,
+        json={"role": "AI_ENGINEER", "is_active": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["role"] == "AI_ENGINEER"
+    assert updated.json()["isActive"] is False
+
+    self_deactivation = client.patch(
+        f"/api/v1/auth/users/{admin_login['user']['id']}",
+        headers=headers,
+        json={"is_active": False},
+    )
+    assert self_deactivation.status_code == 409
+
+    engineer_headers = {
+        "Authorization": f"Bearer {engineer_login['access_token']}"
+    }
+    denied_update = client.patch(
+        f"/api/v1/auth/users/{created.json()['id']}",
+        headers=engineer_headers,
+        json={"is_active": True},
+    )
+    assert denied_update.status_code == 403
 
     accounts = client.get("/api/v1/auth/users", headers=headers)
     assert accounts.status_code == 200

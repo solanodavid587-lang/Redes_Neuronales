@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Activity, X } from 'lucide-react';
 import type { TrainingJob } from '../types';
 import { api, errorMessage } from '../../../lib/api';
+import LineChart from '../../evaluation/components/LineChart';
 
 interface Props {
   job: TrainingJob;
@@ -52,15 +53,51 @@ export default function JobMonitor({ job, onClose }: Props) {
           <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${Math.min(job.progress, 100)}%` }} /></div>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
+          {job.status === 'FAILED' && (
+            <section role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <h3 className="font-semibold">El entrenamiento falló antes de generar métricas.</h3>
+              <p className="mt-1">{job.errorMessage || 'Revisa el dataset y la configuración antes de crear otro trabajo.'}</p>
+            </section>
+          )}
+          <section className="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-slate-800">Configuración {job.modelFamily}</h3>
+            <dl className="grid grid-cols-2 gap-3 text-xs">
+              <div><dt className="text-slate-500">Batch size</dt><dd className="mt-1 font-medium">{job.configuration?.batchSize ?? '—'}</dd></div>
+              <div><dt className="text-slate-500">Learning rate</dt><dd className="mt-1 font-medium">{job.configuration?.learningRate ?? '—'}</dd></div>
+              <div><dt className="text-slate-500">Optimizador</dt><dd className="mt-1 font-medium">{job.configuration?.optimizer ?? '—'}</dd></div>
+              <div><dt className="text-slate-500">Pérdida</dt><dd className="mt-1 font-medium">{job.configuration?.loss ?? '—'}</dd></div>
+              <div><dt className="text-slate-500">Early stopping</dt><dd className="mt-1 font-medium">{job.configuration?.earlyStopping ? `Sí · paciencia ${job.configuration.patience}` : 'No'}</dd></div>
+              <div><dt className="text-slate-500">Semilla</dt><dd className="mt-1 font-medium">{job.configuration?.seed ?? '—'}</dd></div>
+            </dl>
+          </section>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800"><Activity size={16} className="text-indigo-600" /> Métricas por época</h3>
           {error ? <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</p> : metrics.length ? (
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3">Época</th><th className="p-3">Train loss</th><th className="p-3">Val loss</th><th className="p-3">Train acc</th><th className="p-3">Val acc</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">{metrics.map(metric => <tr key={metric.epoch}><td className="p-3 font-medium">{metric.epoch}</td><td className="p-3">{metric.trainLoss.toFixed(4)}</td><td className="p-3">{metric.valLoss.toFixed(4)}</td><td className="p-3">{(metric.trainAcc * 100).toFixed(1)}%</td><td className="p-3">{(metric.valAcc * 100).toFixed(1)}%</td></tr>)}</tbody>
-              </table>
+            <div className="space-y-4">
+              <LineChart
+                data={metrics.map(metric => ({ epoch: metric.epoch, train: metric.trainLoss, val: metric.valLoss }))}
+                title="Pérdida"
+                yLabel="Época"
+                colorTrain="#818cf8"
+                colorVal="#fb7185"
+                minDomain={0}
+              />
+              <LineChart
+                data={metrics.map(metric => ({ epoch: metric.epoch, train: metric.trainAcc, val: metric.valAcc }))}
+                title="Precisión"
+                yLabel="Época"
+                colorTrain="#818cf8"
+                colorVal="#34d399"
+                minDomain={0}
+                maxDomain={1}
+              />
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3">Época</th><th className="p-3">Train loss</th><th className="p-3">Val loss</th><th className="p-3">Train acc</th><th className="p-3">Val acc</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">{metrics.map(metric => <tr key={metric.epoch}><td className="p-3 font-medium">{metric.epoch}</td><td className="p-3">{metric.trainLoss.toFixed(4)}</td><td className="p-3">{metric.valLoss.toFixed(4)}</td><td className="p-3">{(metric.trainAcc * 100).toFixed(1)}%</td><td className="p-3">{(metric.valAcc * 100).toFixed(1)}%</td></tr>)}</tbody>
+                </table>
+              </div>
             </div>
-          ) : <p className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">El worker aún no ha enviado métricas para este trabajo.</p>}
+          ) : <p className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">{job.status === 'FAILED' ? 'Este trabajo terminó sin métricas.' : 'El worker aún no ha enviado métricas para este trabajo.'}</p>}
         </div>
         <footer className="border-t border-slate-200 bg-slate-50 p-4 text-right">
           <button onClick={onClose} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-100">Cerrar</button>

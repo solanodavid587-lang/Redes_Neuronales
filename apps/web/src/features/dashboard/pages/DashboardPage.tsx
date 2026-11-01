@@ -84,10 +84,10 @@ export default function DashboardPage() {
 
   // --- TARJETAS KPI ---
   const kpiCards = [
-    { title: 'Costo de Cómputo (Mes)', value: kpis.computeCost, trend: kpis.computeCostTrend, isPositive: kpis.computeCostTrend.startsWith('-'), subtitle: 'vs mes anterior', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { title: 'Tiempo Medio de Entrenamiento', value: kpis.avgTrainingTime, trend: kpis.avgTrainingTimeTrend, isPositive: kpis.avgTrainingTimeTrend.startsWith('-'), subtitle: 'por job', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { title: 'Tasa de Éxito de Jobs', value: kpis.jobSuccessRate, trend: kpis.jobSuccessRateTrend, isPositive: !kpis.jobSuccessRateTrend.startsWith('-'), subtitle: 'últimos 30 días', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { title: 'Modelos en Producción', value: kpis.modelsInProduction, trend: kpis.modelsInProductionTrend, isPositive: !kpis.modelsInProductionTrend.startsWith('-'), subtitle: 'nuevas versiones', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { title: 'Costo de cómputo', value: kpis.computeCost, trend: kpis.computeCostTrend, isPositive: kpis.computeCostTrend.startsWith('-'), subtitle: kpis.computeCost === '—' ? 'Integración de costos pendiente' : 'vs. mes anterior', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { title: 'Tiempo medio de entrenamiento', value: kpis.avgTrainingTime, trend: kpis.avgTrainingTimeTrend, isPositive: kpis.avgTrainingTimeTrend.startsWith('-'), subtitle: kpis.avgTrainingTime === '—' ? 'Sin datos de duración' : 'por trabajo', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { title: 'Tasa de éxito', value: kpis.jobSuccessRate, trend: kpis.jobSuccessRateTrend, isPositive: !kpis.jobSuccessRateTrend.startsWith('-'), subtitle: 'Entrenamientos completados', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'Modelos aprobados', value: kpis.modelsInProduction, trend: kpis.modelsInProductionTrend, isPositive: !kpis.modelsInProductionTrend.startsWith('-'), subtitle: 'En el registro de modelos', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   ];
 
   return (
@@ -96,8 +96,8 @@ export default function DashboardPage() {
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Overview</h1>
-          <p className="text-sm text-slate-500 mt-1">Métricas de rendimiento, costos y salud del clúster de IA.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Panel general</h1>
+          <p className="text-sm text-slate-500 mt-1">Estado de los entrenamientos, modelos y métricas disponibles.</p>
         </div>
         <div className="flex gap-2">
           {/* BOTÓN: Redirige a /projects y envía el estado "openNew" */}
@@ -220,7 +220,7 @@ export default function DashboardPage() {
                   <Inbox size={24} className="text-slate-400" />
                 </div>
                 <h3 className="text-sm font-medium text-slate-900">No hay entrenamientos recientes</h3>
-                <p className="text-xs text-slate-500 mt-1 max-w-[250px]">Cuando inicies un trabajo de TensorFlow, aparecerá aquí en tiempo real.</p>
+                <p className="text-xs text-slate-500 mt-1 max-w-[250px]">Cuando un worker CNN/RNN comunique métricas, aparecerán aquí en tiempo real.</p>
                 <Link to="/training" className="mt-4 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors">
                   Ir a Entrenamientos
                 </Link>

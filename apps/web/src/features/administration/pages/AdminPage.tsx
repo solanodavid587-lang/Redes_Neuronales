@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-  Activity, Cpu, Database, Server, ShieldAlert, UserPlus, Users,
+  Activity, Cpu, Database, Save, Server, ShieldAlert, UserPlus, Users,
 } from 'lucide-react';
 import { api, errorMessage } from '../../../lib/api';
 import { ErrorState, InlineNotice, LoadingState } from '../../../components/ui/Feedback';
@@ -32,6 +32,9 @@ export default function AdminPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [accounts, setAccounts] = useState<ManagedUser[]>([]);
+  const [userEdits, setUserEdits] = useState<Record<string, { role: ManagedUser['role']; isActive: boolean }>>({});
+  const [savingUserId, setSavingUserId] = useState('');
+  const [userActionError, setUserActionError] = useState('');
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState('');
   const [createError, setCreateError] = useState('');
@@ -102,6 +105,28 @@ export default function AdminPage() {
     }
   }
 
+  async function updateUser(account: ManagedUser) {
+    const changes = userEdits[account.id] ?? { role: account.role, isActive: account.isActive };
+    setSavingUserId(account.id);
+    setUserActionError('');
+    try {
+      const updated = await api.patch<ManagedUser>(`/auth/users/${account.id}`, {
+        role: changes.role,
+        is_active: changes.isActive,
+      });
+      setAccounts(current => current.map(item => item.id === updated.id ? updated : item));
+      setUserEdits(current => {
+        const next = { ...current };
+        delete next[account.id];
+        return next;
+      });
+    } catch (error) {
+      setUserActionError(errorMessage(error));
+    } finally {
+      setSavingUserId('');
+    }
+  }
+
   const tabs: { id: AdminTab; title: string; icon: typeof Users }[] = [
     { id: 'users', title: 'Usuarios', icon: Users },
     { id: 'audit', title: 'Auditoría', icon: ShieldAlert },
@@ -153,11 +178,24 @@ export default function AdminPage() {
 
           <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-5"><h2 className="font-semibold text-slate-900">Cuentas registradas</h2></div>
+            {userActionError && <p role="alert" className="m-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{userActionError}</p>}
             {usersError ? <ErrorState message={usersError} /> : usersLoading ? <LoadingState label="Cargando usuarios…" /> : accounts.length ? (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Correo</th><th className="px-5 py-3">Rol</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Creado</th></tr></thead>
-                  <tbody className="divide-y divide-slate-100">{accounts.map(account => <tr key={account.id}><td className="px-5 py-3 font-medium text-slate-800">{account.email}</td><td className="px-5 py-3 text-slate-600">{roleLabel(account.role)}</td><td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${account.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{account.isActive ? 'Activo' : 'Inactivo'}</span></td><td className="px-5 py-3 text-slate-500">{new Date(account.createdAt).toLocaleDateString()}</td></tr>)}</tbody>
+                <table className="w-full min-w-[800px] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Correo</th><th className="px-5 py-3">Rol</th><th className="px-5 py-3">Estado</th><th className="px-5 py-3">Creado</th><th className="px-5 py-3">Acciones</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">{accounts.map(account => {
+                    const changes = userEdits[account.id] ?? { role: account.role, isActive: account.isActive };
+                    const dirty = changes.role !== account.role || changes.isActive !== account.isActive;
+                    return <tr key={account.id}>
+                      <td className="px-5 py-3 font-medium text-slate-800">{account.email}</td>
+                      <td className="px-5 py-3"><select value={changes.role} disabled={account.id === user?.id || savingUserId === account.id} onChange={event => setUserEdits(current => ({ ...current, [account.id]: { ...changes, role: event.target.value as ManagedUser['role'] } }))} aria-label={`Rol de ${account.email}`} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs">
+                        <option value="ADMIN">Administrador</option><option value="PROJECT_MANAGER">Jefe de proyecto</option><option value="AI_ENGINEER">Ingeniero de IA</option><option value="REVIEWER">Revisor</option>
+                      </select></td>
+                      <td className="px-5 py-3"><label className="inline-flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={changes.isActive} disabled={account.id === user?.id || savingUserId === account.id} onChange={event => setUserEdits(current => ({ ...current, [account.id]: { ...changes, isActive: event.target.checked } }))} />{changes.isActive ? 'Activo' : 'Inactivo'}</label></td>
+                      <td className="px-5 py-3 text-slate-500">{new Date(account.createdAt).toLocaleDateString()}</td>
+                      <td className="px-5 py-3"><button type="button" disabled={!dirty || savingUserId === account.id} onClick={() => void updateUser(account)} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"><Save size={13} />Guardar</button></td>
+                    </tr>;
+                  })}</tbody>
                 </table>
               </div>
             ) : <p className="p-8 text-center text-sm text-slate-500">No hay usuarios registrados.</p>}
@@ -195,16 +233,6 @@ export default function AdminPage() {
       )}
     </div>
   );
-}
-
-function roleLabel(role: ManagedUser['role']): string {
-  const labels: Record<ManagedUser['role'], string> = {
-    ADMIN: 'Administrador',
-    PROJECT_MANAGER: 'Jefe de proyecto',
-    AI_ENGINEER: 'Ingeniero de IA',
-    REVIEWER: 'Revisor',
-  };
-  return labels[role];
 }
 
 function StatusCard({ icon: Icon, name, detail, ok, loading }: {

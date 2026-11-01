@@ -1,11 +1,11 @@
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user, get_user_id, require_admin
@@ -30,6 +30,17 @@ class CreateUserRequest(BaseModel):
     )
     password: str = Field(min_length=12, max_length=128)
     role: str = Field(pattern="^(ADMIN|PROJECT_MANAGER|AI_ENGINEER|REVIEWER)$")
+
+
+class UpdateUserRequest(BaseModel):
+    role: Literal["ADMIN", "PROJECT_MANAGER", "AI_ENGINEER", "REVIEWER"] | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_update(self) -> "UpdateUserRequest":
+        if self.role is None and self.is_active is None:
+            raise ValueError("Indica un rol o estado para actualizar.")
+        return self
 
 
 def user_output(user: User) -> dict[str, str]:
@@ -130,6 +141,50 @@ def create_user(
         role=payload.role,
         is_active=True,
     )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return admin_user_output(account)
+
+
+@router.patch("/users/{user_id}")
+def update_user(
+    user_id: str,
+    payload: UpdateUserRequest,
+    admin: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    account = db.get(User, user_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    updates = payload.model_dump(exclude_unset=True)
+    if any(value is None for value in updates.values()):
+        raise HTTPException(
+            status_code=422,
+            detail="Los campos enviados no pueden ser nulos.",
+        )
+    deactivate_account = updates.get("is_active") is False
+    demote_admin = account.role == "ADMIN" and updates.get("role", "ADMIN") != "ADMIN"
+    if account.id == get_user_id(admin) and deactivate_account:
+        raise HTTPException(
+            status_code=409,
+            detail="No puedes desactivar tu propia cuenta.",
+        )
+    if account.role == "ADMIN" and account.is_active and (deactivate_account or demote_admin):
+        active_admins = db.scalar(
+            select(func.count(User.id)).where(
+                User.role == "ADMIN",
+                User.is_active.is_(True),
+            )
+        ) or 0
+        if active_admins <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail="Debe quedar al menos un administrador activo.",
+            )
+
+    for key, value in updates.items():
+        setattr(account, key, value)
     db.add(account)
     db.commit()
     db.refresh(account)

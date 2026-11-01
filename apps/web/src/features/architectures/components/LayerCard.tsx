@@ -4,6 +4,7 @@ import type { Layer } from '../types';
 interface Props {
   layer: Layer;
   isSelected: boolean;
+  readOnly?: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }
@@ -13,8 +14,11 @@ function layerStyles(type: string) {
     case 'Input':
       return { icon: <Target size={20} />, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', ring: 'ring-blue-500/20' };
     case 'Conv2D':
+    case 'MaxPooling2D':
       return { icon: <Grid size={20} />, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200', ring: 'ring-rose-500/20' };
     case 'LSTM':
+    case 'GRU':
+    case 'SimpleRNN':
       return { icon: <Box size={20} />, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', ring: 'ring-purple-500/20' };
     case 'Dropout':
       return { icon: <ShieldAlert size={20} />, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', ring: 'ring-amber-500/20' };
@@ -25,8 +29,15 @@ function layerStyles(type: string) {
   }
 }
 
-export default function LayerCard({ layer, isSelected, onSelect, onDelete }: Props) {
+export default function LayerCard({ layer, isSelected, readOnly = false, onSelect, onDelete }: Props) {
   const styles = layerStyles(layer.type);
+  const detail = layer.type === 'Dropout'
+    ? `Tasa ${layer.dropoutRate ?? 0.2}`
+    : layer.type === 'Flatten'
+      ? 'Aplanamiento'
+      : layer.type === 'Conv2D'
+        ? `${layer.neurons} filtros · kernel ${layer.kernelSize ?? 3}`
+        : `${layer.neurons} unidades`;
   return (
     <div className="relative mx-auto flex w-full max-w-sm flex-col items-center">
       <div className={`flex w-full items-center gap-2 rounded-xl border-2 bg-white p-3 shadow-sm transition ${
@@ -41,12 +52,12 @@ export default function LayerCard({ layer, isSelected, onSelect, onDelete }: Pro
               {layer.type === 'Output' && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">Salida</span>}
             </span>
             <span className="mt-0.5 block text-xs font-medium text-slate-500">
-              {layer.type === 'Dropout' ? 'Regularización' : `${layer.neurons} unidades`}
+              {detail}
               {layer.type !== 'Input' && <span className="ml-2 rounded bg-slate-100 px-1 font-mono text-slate-600">{layer.activation}</span>}
             </span>
           </span>
         </button>
-        {layer.type !== 'Input' && layer.type !== 'Output' && (
+        {!readOnly && layer.type !== 'Input' && layer.type !== 'Output' && (
           <button type="button" onClick={onDelete} aria-label={`Eliminar capa ${layer.type}`} title="Eliminar capa" className="rounded-md p-1.5 text-slate-300 transition hover:bg-red-50 hover:text-red-500">
             <Trash2 size={16} />
           </button>

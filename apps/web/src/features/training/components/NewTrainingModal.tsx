@@ -6,12 +6,13 @@ import { ErrorState, LoadingState } from '../../../components/ui/Feedback';
 import type { Project } from '../../projects/types';
 import type { Dataset } from '../../datasets/types';
 import type { Layer } from '../../architectures/types';
+import type { ModelFamily } from '../../architectures/types';
 
 interface ArchitectureOption {
   id: string;
   projectId: string | null;
   name: string;
-  family: string;
+  family: ModelFamily;
   layers: Layer[];
 }
 
@@ -35,6 +36,10 @@ export default function NewTrainingModal({ isOpen, onClose, onCreated }: Props) 
   const [batchSize, setBatchSize] = useState(32);
   const [optimizer, setOptimizer] = useState('adam');
   const [learningRate, setLearningRate] = useState('0.001');
+  const [loss, setLoss] = useState('sparse_categorical_crossentropy');
+  const [earlyStopping, setEarlyStopping] = useState(true);
+  const [patience, setPatience] = useState(5);
+  const [seed, setSeed] = useState(42);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -61,9 +66,10 @@ export default function NewTrainingModal({ isOpen, onClose, onCreated }: Props) 
   const projectDatasets = useMemo(() => datasets.filter(item =>
     item.status === 'READY' && (!item.projectId || item.projectId === projectId),
   ), [datasets, projectId]);
+  const selectedProject = projects.find(project => project.id === projectId);
   const projectArchitectures = useMemo(() => architectures.filter(item =>
-    item.projectId === projectId,
-  ), [architectures, projectId]);
+    item.projectId === projectId && item.family === selectedProject?.modelFamily,
+  ), [architectures, projectId, selectedProject?.modelFamily]);
 
   function changeProject(nextProjectId: string) {
     setProjectId(nextProjectId);
@@ -81,7 +87,15 @@ export default function NewTrainingModal({ isOpen, onClose, onCreated }: Props) 
         datasetId,
         architectureId,
         totalEpochs: epochs,
-        configuration: { batchSize, optimizer, learningRate: Number(learningRate) },
+        configuration: {
+          batchSize,
+          optimizer,
+          learningRate: Number(learningRate),
+          loss,
+          earlyStopping,
+          patience,
+          seed,
+        },
       });
       onCreated();
       onClose();
@@ -144,14 +158,33 @@ export default function NewTrainingModal({ isOpen, onClose, onCreated }: Props) 
               <label className="block text-sm font-medium text-slate-700">Learning rate
                 <input type="number" required min="0.000001" max="1" step="any" value={learningRate} onChange={event => setLearningRate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono" />
               </label>
+              <label className="block text-sm font-medium text-slate-700">Función de pérdida
+                <select value={loss} onChange={event => setLoss(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2">
+                  <option value="sparse_categorical_crossentropy">Sparse categorical crossentropy</option>
+                  <option value="categorical_crossentropy">Categorical crossentropy</option>
+                  <option value="binary_crossentropy">Binary crossentropy</option>
+                  <option value="mean_squared_error">Mean squared error</option>
+                  <option value="mean_absolute_error">Mean absolute error</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Paciencia de early stopping
+                <input type="number" min={0} max={1000} value={patience} onChange={event => setPatience(Number(event.target.value))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Semilla aleatoria
+                <input type="number" min={0} max={2147483647} value={seed} onChange={event => setSeed(Number(event.target.value))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono" />
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 sm:col-span-2">
+                <input type="checkbox" checked={earlyStopping} onChange={event => setEarlyStopping(event.target.checked)} />
+                Activar early stopping
+              </label>
             </div>
             <div className="flex gap-3 rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-indigo-900">
               <Server size={18} className="mt-0.5 shrink-0" />
-              <p className="text-xs">El trabajo se guardará en la cola. La ejecución requiere un worker conectado; el estado no cambiará hasta que el worker envíe métricas.</p>
+              <p className="text-xs">Al iniciar, el trabajo se agrega a la cola y el worker TensorFlow/Keras lo ejecuta. Las métricas aparecen al terminar cada época.</p>
             </div>
             <footer className="flex justify-end gap-3 border-t border-slate-200 pt-4">
               <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
-              <button type="submit" disabled={submitting || !projectId || !datasetId || !architectureId} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? 'Encolando…' : 'Crear trabajo'}</button>
+              <button type="submit" disabled={submitting || !projectId || !datasetId || !architectureId} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? 'Iniciando…' : 'Iniciar entrenamiento'}</button>
             </footer>
           </form>
         )}

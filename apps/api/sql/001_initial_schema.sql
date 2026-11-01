@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS projects (
     owner_id VARCHAR(128) NOT NULL,
     name VARCHAR(120) NOT NULL,
     description TEXT NOT NULL,
+    objective TEXT NOT NULL DEFAULT '',
+    model_family VARCHAR(10) NOT NULL DEFAULT 'CNN',
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
@@ -26,12 +28,16 @@ CREATE TABLE IF NOT EXISTS datasets (
     owner_id VARCHAR(128) NOT NULL,
     project_id VARCHAR(36) REFERENCES projects(id) ON DELETE SET NULL,
     name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     format VARCHAR(20) NOT NULL,
     size_bytes BIGINT NOT NULL,
     rows_count INTEGER NOT NULL,
     status VARCHAR(20) NOT NULL,
     train_split DOUBLE PRECISION NOT NULL,
     val_split DOUBLE PRECISION NOT NULL,
+    target_column VARCHAR(255),
+    feature_columns JSON NOT NULL DEFAULT '[]',
+    sequence_length INTEGER,
     storage_path VARCHAR(512),
     uploaded_at TIMESTAMPTZ NOT NULL
 );
@@ -42,6 +48,8 @@ CREATE TABLE IF NOT EXISTS architectures (
     project_id VARCHAR(36) REFERENCES projects(id) ON DELETE SET NULL,
     name VARCHAR(120) NOT NULL,
     family VARCHAR(40) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    input_shape JSON NOT NULL DEFAULT '[]',
     layers JSON NOT NULL,
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
@@ -60,6 +68,11 @@ CREATE TABLE IF NOT EXISTS training_jobs (
     total_epochs INTEGER NOT NULL,
     loss DOUBLE PRECISION,
     accuracy DOUBLE PRECISION,
+    precision DOUBLE PRECISION,
+    recall DOUBLE PRECISION,
+    f1_score DOUBLE PRECISION,
+    confusion_matrix JSON,
+    error_message TEXT,
     configuration JSON NOT NULL,
     started_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
@@ -89,6 +102,7 @@ CREATE TABLE IF NOT EXISTS model_versions (
     size_bytes BIGINT NOT NULL,
     format VARCHAR(20) NOT NULL,
     checksum VARCHAR(128) NOT NULL,
+    artifact_path VARCHAR(512),
     created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
 );

@@ -1,25 +1,57 @@
 import { useEffect, useState } from 'react';
-import { Plus, Save, Play, Settings2, ArrowLeft, CheckCircle2, AlertCircle, Cpu, Sparkles } from 'lucide-react';
+import { Plus, Save, Play, Settings2, ArrowLeft, CheckCircle2, AlertCircle, Cpu, Sparkles, Trash2 } from 'lucide-react';
 import LayerCard from '../components/LayerCard';
-import { Layer } from '../types';
+import { Layer, type ModelFamily } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { api, Page } from '../../../lib/api';
 import { Project } from '../../projects/types';
 import { InlineNotice } from '../../../components/ui/Feedback';
+import { useAuth } from '../../../auth/AuthProvider';
+import { canDesignArchitectures } from '../../../auth/permissions';
 
-const initialLayers: Layer[] = [
-  { id: 'input', type: 'Input', neurons: 784, activation: 'None' },
-  { id: 'output', type: 'Output', neurons: 10, activation: 'softmax' },
-];
+function initialLayersFor(family: ModelFamily): Layer[] {
+  if (family === 'CNN') {
+    return [
+      { id: 'input', type: 'Input', neurons: 784, activation: 'None' },
+      { id: 'conv', type: 'Conv2D', neurons: 32, activation: 'relu', kernelSize: 3 },
+      { id: 'pool', type: 'MaxPooling2D', neurons: 1, activation: 'None' },
+      { id: 'flatten', type: 'Flatten', neurons: 1, activation: 'None' },
+      { id: 'dense', type: 'Dense', neurons: 64, activation: 'relu' },
+      { id: 'output', type: 'Output', neurons: 10, activation: 'softmax' },
+    ];
+  }
+  return [
+    { id: 'input', type: 'Input', neurons: 1, activation: 'None' },
+    { id: 'lstm', type: 'LSTM', neurons: 64, activation: 'tanh' },
+    { id: 'dense', type: 'Dense', neurons: 32, activation: 'relu' },
+    { id: 'output', type: 'Output', neurons: 1, activation: 'linear' },
+  ];
+}
+
+interface SavedArchitecture {
+  id: string;
+  projectId: string | null;
+  name: string;
+  family: ModelFamily;
+  description: string;
+  inputShape: number[];
+  layers: Layer[];
+}
 
 export default function ArchitecturesPage() {
   const navigate = useNavigate();
-  const [family, setFamily] = useState('Feedforward');
-  const [layers, setLayers] = useState<Layer[]>(initialLayers);
+  const { user } = useAuth();
+  const mayDesign = canDesignArchitectures(user?.role);
+  const [family, setFamily] = useState<ModelFamily>('CNN');
+  const [layers, setLayers] = useState<Layer[]>(initialLayersFor('CNN'));
+  const [architectureDescription, setArchitectureDescription] = useState('');
+  const [inputShape, setInputShape] = useState('28, 28, 1');
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [architectures, setArchitectures] = useState<SavedArchitecture[]>([]);
   const [projectId, setProjectId] = useState('');
   const [architectureName, setArchitectureName] = useState('');
+  const [architectureSearch, setArchitectureSearch] = useState('');
   const [architectureId, setArchitectureId] = useState('');
   const [loadError, setLoadError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -28,19 +60,55 @@ export default function ArchitecturesPage() {
 
   useEffect(() => {
     let active = true;
-    api.get<Page<Project>>('/projects?limit=100')
-      .then(result => { if (active) setProjects(result.items.filter(project => project.status !== 'ARCHIVED')); })
+    Promise.all([
+      api.get<Page<Project>>('/projects?limit=100'),
+      api.get<Page<SavedArchitecture>>('/architectures?limit=100'),
+    ])
+      .then(([projectPage, architecturePage]) => {
+        if (!active) return;
+        setProjects(projectPage.items.filter(project => project.status !== 'ARCHIVED'));
+        setArchitectures(architecturePage.items);
+      })
       .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los proyectos.'); });
     return () => { active = false; };
   }, []);
 
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
+  const availableProjects = projects.filter(project => project.modelFamily === family);
+  const projectArchitectures = architectures.filter(item =>
+    item.projectId === projectId
+      && item.family === family
+      && item.name.toLowerCase().includes(architectureSearch.trim().toLowerCase()),
+  );
+
+  function selectArchitecture(id: string) {
+    const saved = architectures.find(item => item.id === id);
+    setArchitectureId(saved?.id ?? '');
+    if (saved) {
+      setArchitectureName(saved.name);
+      setFamily(saved.family);
+      setArchitectureDescription(saved.description ?? '');
+      setInputShape(saved.inputShape?.length ? saved.inputShape.join(', ') : saved.family === 'CNN' ? '28, 28, 1' : '10, 1');
+      setLayers(saved.layers);
+    } else {
+      setArchitectureName('');
+      setArchitectureDescription('');
+      const nextFamily = family;
+      setFamily(nextFamily);
+      setInputShape(nextFamily === 'CNN' ? '28, 28, 1' : '10, 1');
+      setLayers(initialLayersFor(nextFamily));
+    }
+    setSelectedLayerId(null);
+  }
 
   const addLayer = () => {
     const newLayer: Layer = {
       id: `layer_${Date.now()}`,
-      type: family === 'CNN' ? 'Conv2D' : family === 'RNN' ? 'LSTM' : 'Dense',
+      type: family === 'CNN' ? 'Conv2D' : 'LSTM',
       neurons: 128, // Unidades más realistas por defecto
+      kernelSize: 3,
+      dropoutRate: 0.2,
+      returnSequences: false,
       activation: 'relu'
     };
     const outputIndex = layers.findIndex(l => l.type === 'Output');
@@ -55,29 +123,52 @@ export default function ArchitecturesPage() {
     if (selectedLayerId === id) setSelectedLayerId(null);
   };
 
-  const updateLayer = (id: string, field: keyof Layer, value: string | number) => {
+  const updateLayer = (id: string, field: keyof Layer, value: string | number | boolean) => {
     setLayers(layers.map(l => l.id === id ? { ...l, [field]: value } : l));
   };
 
   const handleSave = async () => {
     if (!projectId || !architectureName.trim()) {
-      setMessage({ type: 'error', text: 'Selecciona un proyecto y asigna un nombre antes de guardar.' });
+      setMessage({ type: 'error', text: 'Selecciona un proyecto, asigna un nombre y define la forma de entrada.' });
+      return;
+    }
+    const parsedInputShape = inputShape.split(',').map(dimension => Number(dimension.trim()));
+    if (
+      parsedInputShape.length < 1
+      || parsedInputShape.length > 4
+      || parsedInputShape.some(dimension => !Number.isInteger(dimension) || dimension < 1)
+    ) {
+      setMessage({ type: 'error', text: 'La forma de entrada debe contener de 1 a 4 dimensiones enteras positivas, separadas por comas.' });
       return;
     }
     setIsSaving(true);
     setMessage(null);
     try {
-      const payload = { projectId, name: architectureName.trim(), family, layers };
+      const payload = {
+        projectId,
+        name: architectureName.trim(),
+        family,
+        description: architectureDescription.trim(),
+        inputShape: parsedInputShape,
+        layers,
+      };
+      let saved: SavedArchitecture;
       if (architectureId) {
-        await api.patch(`/architectures/${architectureId}`, {
+        saved = await api.patch<SavedArchitecture>(`/architectures/${architectureId}`, {
           name: architectureName.trim(),
           family,
+          description: architectureDescription.trim(),
+          inputShape: parsedInputShape,
           layers,
         });
       } else {
-        const saved = await api.post<{ id: string }>('/architectures', payload);
-        setArchitectureId(saved.id);
+        saved = await api.post<SavedArchitecture>('/architectures', payload);
       }
+      setArchitectureId(saved.id);
+      setArchitectures(items => [
+        saved,
+        ...items.filter(item => item.id !== saved.id),
+      ]);
       setMessage({ type: 'success', text: 'Arquitectura guardada en el proyecto.' });
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la arquitectura.' });
@@ -96,7 +187,7 @@ export default function ArchitecturesPage() {
     try {
       const result = await api.post<{ valid: boolean; errors: string[] }>(`/architectures/${architectureId}/validate`, undefined);
       setMessage(result.valid
-        ? { type: 'success', text: 'La estructura es válida. La compilación de TensorFlow requiere un worker conectado.' }
+        ? { type: 'success', text: 'La estructura es válida para entrenarse con TensorFlow/Keras.' }
         : { type: 'error', text: result.errors.join(' ') });
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo validar la arquitectura.' });
@@ -104,6 +195,49 @@ export default function ArchitecturesPage() {
       setIsCompiling(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (!architectureId || !window.confirm(`¿Eliminar la arquitectura "${architectureName}"?`)) return;
+    setMessage(null);
+    try {
+      await api.delete(`/architectures/${architectureId}`);
+      setArchitectures(items => items.filter(item => item.id !== architectureId));
+      setArchitectureId('');
+      setArchitectureName('');
+      setArchitectureDescription('');
+      setLayers(initialLayersFor(family));
+      setSelectedLayerId(null);
+      setMessage({ type: 'success', text: 'Arquitectura eliminada.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo eliminar la arquitectura.' });
+    }
+  };
+
+  function changeProject(nextProjectId: string) {
+    setProjectId(nextProjectId);
+    const selectedProject = projects.find(project => project.id === nextProjectId);
+    const nextFamily = selectedProject?.modelFamily ?? family;
+    setFamily(nextFamily);
+    setArchitectureId('');
+    setArchitectureName('');
+    setArchitectureDescription('');
+    setInputShape(nextFamily === 'CNN' ? '28, 28, 1' : '10, 1');
+    setArchitectureSearch('');
+    setLayers(initialLayersFor(nextFamily));
+    setSelectedLayerId(null);
+  }
+
+  function changeFamily(nextFamily: ModelFamily) {
+    setFamily(nextFamily);
+    setProjectId('');
+    setArchitectureId('');
+    setArchitectureName('');
+    setArchitectureSearch('');
+    setArchitectureDescription('');
+    setInputShape(nextFamily === 'CNN' ? '28, 28, 1' : '10, 1');
+    setLayers(initialLayersFor(nextFamily));
+    setSelectedLayerId(null);
+  }
 
   return (
     <div className="flex min-h-[calc(100dvh-8rem)] flex-col space-y-4 md:h-[calc(100vh-8rem)]">
@@ -118,46 +252,69 @@ export default function ArchitecturesPage() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               Diseñador Visual <Sparkles size={18} className="text-indigo-500" />
             </h1>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">Arrastra, configura y compila tu red neuronal.</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">Configura y valida una arquitectura CNN o RNN.</p>
           </div>
         </div>
         
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          <select
+            value={family}
+            onChange={event => changeFamily(event.target.value === 'RNN' ? 'RNN' : 'CNN')}
+            aria-label="Filtrar por familia de arquitectura"
+            className="min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
+          >
+            <option value="CNN">CNN</option>
+            <option value="RNN">RNN</option>
+          </select>
           <input
             value={architectureName}
             onChange={event => setArchitectureName(event.target.value)}
             aria-label="Nombre de la arquitectura"
             placeholder="Nombre de arquitectura"
+            required
             maxLength={120}
+            disabled={!mayDesign}
             className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-48"
           />
           <select
             value={projectId}
-            onChange={event => { setProjectId(event.target.value); setArchitectureId(''); }}
+            required
+            onChange={event => changeProject(event.target.value)}
             aria-label="Proyecto de la arquitectura"
             className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm sm:w-48"
           >
-            <option value="">Selecciona proyecto…</option>
-            {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+            <option value="">Selecciona proyecto {family}…</option>
+            {availableProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <select 
-            value={family}
-            onChange={(e) => setFamily(e.target.value)}
-            className="text-sm font-medium border border-slate-300 rounded-lg py-2 px-3 bg-slate-50 text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
-          >
-            <option value="Feedforward">Feedforward (MLP)</option>
-            <option value="RNN">Recurrente (RNN)</option>
-            <option value="CNN">Convolucional (CNN)</option>
-            <option value="GAN">Generativa (GAN)</option>
-          </select>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <input
+              value={architectureSearch}
+              onChange={event => setArchitectureSearch(event.target.value)}
+              aria-label="Filtrar arquitecturas guardadas"
+              placeholder="Filtrar arquitecturas…"
+              disabled={!projectId}
+              className="min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm disabled:opacity-60"
+            />
+            <select
+              value={architectureId}
+              onChange={event => selectArchitecture(event.target.value)}
+              aria-label="Arquitectura guardada"
+              disabled={!projectId}
+              className="min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="">Nueva arquitectura…</option>
+              {projectArchitectures.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
           <div className="h-8 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-          <button 
+          {mayDesign && <button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || !projectId || !architectureName.trim()}
             className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-indigo-600 shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
           >
             <Save size={16} /> {isSaving ? 'Guardando...' : 'Guardar'}
-          </button>
+          </button>}
+          {mayDesign && architectureId && <button type="button" onClick={() => void handleDelete()} aria-label="Eliminar arquitectura" title="Eliminar arquitectura" className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"><Trash2 size={16} /></button>}
           <button 
             onClick={handleCompile}
             disabled={isCompiling}
@@ -169,6 +326,15 @@ export default function ArchitecturesPage() {
       </div>
 
       {/* ALERTAS */}
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
+        <label className="block text-sm font-medium text-slate-700">Descripción
+          <textarea rows={2} maxLength={4000} value={architectureDescription} disabled={!mayDesign} onChange={event => setArchitectureDescription(event.target.value)} className="mt-1 w-full resize-none rounded-md border border-slate-300 px-3 py-2 disabled:bg-slate-50" />
+        </label>
+        <label className="block text-sm font-medium text-slate-700">Forma de entrada
+          <input required value={inputShape} disabled={!mayDesign} onChange={event => setInputShape(event.target.value)} placeholder={family === 'CNN' ? '28, 28, 1' : '10, 1'} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono disabled:bg-slate-50" />
+          <span className="mt-1 block text-xs font-normal text-slate-500">{family === 'CNN' ? 'Alto, ancho, canales' : 'Pasos de tiempo, características'}</span>
+        </label>
+      </div>
       {message && (
         <div className={`p-4 rounded-lg text-sm font-medium flex items-center gap-3 border shadow-sm animate-in fade-in slide-in-from-top-2 ${
           message.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'
@@ -178,7 +344,8 @@ export default function ArchitecturesPage() {
         </div>
       )}
       {loadError && <InlineNotice tone="warning">{loadError}</InlineNotice>}
-      <InlineNotice>Este diseñador guarda la topología y valida sus capas; aún no genera ni compila un modelo TensorFlow.</InlineNotice>
+      {!mayDesign && <InlineNotice tone="info">Tu rol permite consultar arquitecturas, pero no modificarlas.</InlineNotice>}
+      <InlineNotice>Elige CNN o RNN y un proyecto de la misma familia. Las arquitecturas pueden entrenarse con el worker TensorFlow/Keras usando datasets CSV numéricos.</InlineNotice>
 
       {/* ÁREA DE TRABAJO */}
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto md:flex-row md:overflow-hidden">
@@ -193,17 +360,18 @@ export default function ArchitecturesPage() {
                 key={layer.id} 
                 layer={layer} 
                 isSelected={selectedLayerId === layer.id}
+                readOnly={!mayDesign}
                 onSelect={() => setSelectedLayerId(layer.id)}
                 onDelete={() => deleteLayer(layer.id)}
               />
             ))}
             
-            <button 
+            {mayDesign && <button
               onClick={addLayer}
               className="mt-4 flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-indigo-200 border-dashed rounded-full text-sm font-bold text-indigo-600 hover:text-white hover:border-indigo-600 hover:bg-indigo-600 transition-all shadow-sm hover:shadow-md"
             >
               <Plus size={18} /> Añadir Capa
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -224,36 +392,67 @@ export default function ArchitecturesPage() {
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Tipo de Capa</label>
                   <select 
                     value={selectedLayer.type} 
-                    disabled={selectedLayer.type === 'Input' || selectedLayer.type === 'Output'}
+                    disabled={!mayDesign || selectedLayer.type === 'Input' || selectedLayer.type === 'Output'}
                     onChange={(e) => updateLayer(selectedLayer.id, 'type', e.target.value)}
                     className="w-full text-sm font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:text-slate-500"
                   >
-                    <option value="Dense">Dense (Linear)</option>
-                    <option value="Conv2D">Conv2D (Convolucional)</option>
-                    <option value="LSTM">LSTM (Recurrente)</option>
+                    {family === 'CNN' ? (
+                      <>
+                        <option value="Conv2D">Conv2D (Convolucional)</option>
+                        <option value="MaxPooling2D">MaxPooling2D</option>
+                        <option value="Flatten">Flatten</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="LSTM">LSTM</option>
+                        <option value="GRU">GRU</option>
+                        <option value="SimpleRNN">SimpleRNN</option>
+                      </>
+                    )}
+                    <option value="Dense">Dense</option>
                     <option value="Dropout">Dropout (Regularización)</option>
                   </select>
                 </div>
                 
                 {selectedLayer.type !== 'Dropout' && (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Neuronas / Unidades</label>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">{selectedLayer.type === 'Conv2D' ? 'Filtros' : 'Neuronas / Unidades'}</label>
                     <input 
                       type="number" 
                       min="1"
                       value={selectedLayer.neurons} 
+                      disabled={!mayDesign}
                       onChange={(e) => updateLayer(selectedLayer.id, 'neurons', Math.max(Number(e.target.value) || 1, 1))}
                       className="w-full text-sm font-mono border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" 
                     />
                   </div>
                 )}
 
+                {selectedLayer.type === 'Conv2D' && (
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Tamaño del kernel
+                    <input type="number" min={1} max={15} value={selectedLayer.kernelSize ?? 3} disabled={!mayDesign} onChange={event => updateLayer(selectedLayer.id, 'kernelSize', Math.max(Number(event.target.value) || 1, 1))} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono" />
+                  </label>
+                )}
+
+                {selectedLayer.type === 'Dropout' && (
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Tasa de dropout
+                    <input type="number" min={0} max={0.99} step={0.01} value={selectedLayer.dropoutRate ?? 0.2} disabled={!mayDesign} onChange={event => updateLayer(selectedLayer.id, 'dropoutRate', Math.min(0.99, Math.max(Number(event.target.value) || 0, 0)))} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono" />
+                  </label>
+                )}
+
+                {['LSTM', 'GRU', 'SimpleRNN'].includes(selectedLayer.type) && (
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" checked={selectedLayer.returnSequences ?? false} disabled={!mayDesign} onChange={event => updateLayer(selectedLayer.id, 'returnSequences', event.target.checked)} />
+                    Devolver secuencias completas
+                  </label>
+                )}
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Activación</label>
                   <select 
                     value={selectedLayer.activation}
+                    disabled={!mayDesign || selectedLayer.type === 'Input'}
                     onChange={(e) => updateLayer(selectedLayer.id, 'activation', e.target.value)}
-                    disabled={selectedLayer.type === 'Input'}
                     className="w-full text-sm font-medium border border-slate-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-100"
                   >
                     <option value="None">None</option>

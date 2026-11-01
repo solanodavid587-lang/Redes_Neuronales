@@ -38,7 +38,7 @@ const modules = [
   {
     icon: BrainCircuit,
     title: 'Diseñador de arquitecturas',
-    description: 'Diseño de capas Feedforward, CNN, RNN y GAN, con persistencia y validación estructural.',
+    description: 'Diseño de capas CNN y RNN con topología, forma de entrada y validación estructural.',
     status: 'Disponible',
     color: 'bg-violet-50 text-violet-600',
   },
@@ -194,7 +194,7 @@ export default function LandingPage() {
                 <div className="grid grid-cols-2 gap-3 p-5">
                   <OverviewTile icon={FolderKanban} label="Proyectos" value="Organizados" detail="Experimentos y recursos" />
                   <OverviewTile icon={Database} label="Datasets" value="Centralizados" detail="Archivos y particiones" />
-                  <OverviewTile icon={BrainCircuit} label="Arquitecturas" value="Configurables" detail="CNN · RNN · MLP · GAN" />
+                  <OverviewTile icon={BrainCircuit} label="Arquitecturas" value="Configurables" detail="CNN · RNN" />
                   <OverviewTile icon={BarChart3} label="Evaluación" value="Trazable" detail="Curvas y métricas por época" />
                 </div>
                 <div className="mx-5 mb-5 rounded-xl border border-white/10 bg-slate-950/70 p-4">

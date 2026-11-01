@@ -1,7 +1,16 @@
-import { Archive, FolderKanban, Database, Package, Calendar } from 'lucide-react';
+import { Archive, FolderKanban, Database, Package, Calendar, Pencil, Trash2 } from 'lucide-react';
 import { Project } from '../types';
 
-export default function ProjectCard({ project, onArchive }: { project: Project; onArchive: () => void }) {
+interface Props {
+  project: Project;
+  canManage: boolean;
+  canDelete: boolean;
+  onEdit: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}
+
+export default function ProjectCard({ project, canManage, canDelete, onEdit, onArchive, onDelete }: Props) {
   const lastActivity = new Date(project.lastActivity);
   return (
     <article className="group flex flex-col rounded-lg border border-slate-200 bg-white shadow-sm transition-all hover:border-indigo-300 hover:shadow-md">
@@ -10,10 +19,24 @@ export default function ProjectCard({ project, onArchive }: { project: Project; 
           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
             <FolderKanban size={20} />
           </div>
-          {project.status !== 'ARCHIVED' && (
-            <button type="button" onClick={onArchive} aria-label={`Archivar ${project.name}`} title="Archivar proyecto" className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100">
-              <Archive size={16} />
-            </button>
+          {(canDelete || (canManage && project.status !== 'ARCHIVED')) && (
+            <div className="flex gap-1">
+              {canManage && project.status !== 'ARCHIVED' && (
+                <>
+                  <button type="button" onClick={onEdit} aria-label={`Editar ${project.name}`} title="Editar proyecto" className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-indigo-50 hover:text-indigo-700 focus:opacity-100 group-hover:opacity-100">
+                    <Pencil size={16} />
+                  </button>
+                  <button type="button" onClick={onArchive} aria-label={`Archivar ${project.name}`} title="Archivar proyecto" className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100">
+                    <Archive size={16} />
+                  </button>
+                </>
+              )}
+              {canDelete && (
+                <button type="button" onClick={onDelete} aria-label={`Eliminar ${project.name}`} title="Eliminar proyecto permanentemente" className="rounded p-1.5 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover:opacity-100">
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
           )}
         </div>
         
@@ -21,8 +44,11 @@ export default function ProjectCard({ project, onArchive }: { project: Project; 
           {project.name}
         </h3>
         <p className="text-[13px] text-slate-500 mt-1 line-clamp-2 h-10">
-          {project.description}
+          {project.objective || project.description}
         </p>
+        <span className="mt-3 inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+          {project.modelFamily}
+        </span>
 
         <div className="mt-4 flex items-center gap-4 text-[13px] text-slate-600">
           <div className="flex items-center gap-1.5">

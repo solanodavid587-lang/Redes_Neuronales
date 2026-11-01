@@ -6,17 +6,13 @@
    crea la cuenta local con `python scripts/create_local_admin.py` desde
    `apps/api`. La contraseña se solicita de forma oculta.
 2. En desarrollo, Vite reenvía `/api` a `http://localhost:8000`.
-3. Las variables `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` se usan solo
-   para la integración opcional de Supabase Storage. Nunca pongas claves
-   secretas ni la contraseña de PostgreSQL en variables `VITE_*`.
+3. La carga de datasets se realiza a través de la API autenticada. Configura
+   `DATASET_STORAGE_DIR` en el backend y usa almacenamiento persistente en
+   despliegues. No se requieren variables de Supabase en el navegador para
+   cargar archivos.
 
 El login valida la cuenta en la tabla PostgreSQL `users`; FastAPI emite un token
 de acceso para proteger las rutas internas. No hay registro público.
-
-La carga de archivos a Storage no está habilitada con la autenticación local:
-el flujo actual de Storage depende de una sesión Supabase Auth. Para habilitarlo
-se debe integrar carga firmada desde el backend; no abras el bucket a usuarios
-anónimos.
 
 ## Desarrollo
 
@@ -27,6 +23,10 @@ npm run dev
 
 Compilación de producción: `npm run build`.
 
-La API implementa metadatos de modelos y solicitudes de reportes, pero aún no
-almacena artefactos de modelos, genera archivos de reportes ni administra
-invitaciones de usuarios. La UI indica esas limitaciones y no simula resultados.
+Los proyectos solo admiten las familias CNN y RNN. El diseñador persiste
+topología, forma de entrada e hiperparámetros. Un worker separado usa
+TensorFlow/Keras para entrenar y publica curvas y métricas de evaluación.
+
+Para despliegue, configura `VITE_API_BASE_URL` con la URL pública de la API.
+Vercel y Render, junto con las variables de producción y el almacenamiento S3
+compartido por API y worker, se describen en [`DEPLOYMENT.md`](../../DEPLOYMENT.md).

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Inbox, Target } from 'lucide-react';
+import { Download, Inbox } from 'lucide-react';
 import LineChart from '../components/LineChart';
 import type { TrainingJob } from '../../training/types';
 import { api, errorMessage, type Page } from '../../../lib/api';
@@ -93,24 +93,67 @@ export default function EvaluationPage() {
       {error && <ErrorState message={error} />}
       {loadingJobs || loadingMetrics ? <LoadingState label="Cargando métricas…" /> : selectedJob && metrics.length ? (
         <>
-          <section className="grid gap-4 sm:grid-cols-2">
-            <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="rounded-lg bg-emerald-50 p-3 text-emerald-600"><Target size={24} /></div>
-              <div><p className="text-xs font-medium text-slate-500">Exactitud de validación</p><p className="text-xl font-bold text-slate-900">{latest ? `${(latest.valAcc * 100).toFixed(2)}%` : '—'}</p></div>
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: 'Exactitud (accuracy)', value: latest ? `${(latest.valAcc * 100).toFixed(2)}%` : '—', color: 'text-emerald-600', detail: 'Aciertos sobre el total' },
+              { label: 'Precisión (macro)', value: selectedJob.precision == null ? '—' : `${(selectedJob.precision * 100).toFixed(2)}%`, color: 'text-sky-600', detail: 'Controla falsos positivos' },
+              { label: 'Recall (macro)', value: selectedJob.recall == null ? '—' : `${(selectedJob.recall * 100).toFixed(2)}%`, color: 'text-amber-600', detail: 'Controla falsos negativos' },
+              { label: 'F1-score (macro)', value: selectedJob.f1Score == null ? '—' : `${(selectedJob.f1Score * 100).toFixed(2)}%`, color: 'text-violet-600', detail: 'Balance entre precisión y recall' },
+            ].map(metric => (
+              <article key={metric.label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">{metric.label}</p>
+                <p className={`mt-2 text-2xl font-bold tracking-tight ${metric.color}`}>{metric.value}</p>
+                <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
+              </article>
+            ))}
+          </section>
+          <section className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Pérdida de validación</h2>
+              <p className="mt-1 text-xs text-slate-500">{selectedJob.projectName} · {selectedJob.architecture} · {metrics.length} épocas</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">Pérdida de validación</p><p className="mt-1 text-xl font-bold text-slate-900">{latest?.valLoss.toFixed(4) ?? '—'}</p>
-              <p className="mt-1 text-xs text-slate-500">{selectedJob.projectName} · {selectedJob.architecture} · {metrics.length} épocas registradas</p>
-            </div>
+            <p className="font-mono text-2xl font-bold text-rose-600">{latest?.valLoss.toFixed(4) ?? '—'}</p>
           </section>
           <section className="grid gap-6 lg:grid-cols-2">
-            <LineChart data={chartLoss} title="Curva de pérdida" yLabel="Época" colorTrain="#6366f1" colorVal="#f43f5e" />
-            <LineChart data={chartAccuracy} title="Curva de exactitud" yLabel="Época" colorTrain="#6366f1" colorVal="#10b981" />
+            <LineChart data={chartLoss} title="Curva de pérdida" yLabel="Época" colorTrain="#818cf8" colorVal="#fb7185" minDomain={0} />
+            <LineChart data={chartAccuracy} title="Curva de exactitud" yLabel="Época" colorTrain="#818cf8" colorVal="#34d399" minDomain={0} maxDomain={1} />
           </section>
+          {selectedJob.confusionMatrix?.length ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-800">Matriz de confusión</h2>
+                  <p className="mt-1 text-xs text-slate-500">Filas: clase real · columnas: predicción · promedio macro para precisión, recall y F1</p>
+                </div>
+                <span className="text-xs text-slate-500">{selectedJob.modelFamily} · validación</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="mx-auto border-separate border-spacing-1 text-center text-xs">
+                  <thead>
+                    <tr><th className="min-w-24 px-3 py-2 text-slate-500">Real ↓ / Pred. →</th>
+                      {selectedJob.confusionMatrix.map((_, index) => <th key={index} className="min-w-12 px-3 py-2 font-medium text-slate-700">{index}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedJob.confusionMatrix.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        <th className="px-3 py-2 font-medium text-slate-700">{rowIndex}</th>
+                        {row.map((count, columnIndex) => {
+                          const peak = Math.max(1, ...selectedJob.confusionMatrix!.flat());
+                          const intensity = Math.round(18 + (count / peak) * 55);
+                          return <td key={columnIndex} className={`rounded-md px-3 py-2 font-mono ${rowIndex === columnIndex ? 'text-emerald-950' : 'text-rose-950'}`} style={{ backgroundColor: rowIndex === columnIndex ? `rgb(16 185 129 / ${intensity}%)` : `rgb(244 63 94 / ${intensity}%)` }}>{count}</td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
         </>
       ) : (
-        <div className="flex min-h-80 flex-col items-center justify-center rounded-lg border border-slate-200 bg-white px-6 text-center shadow-sm">
-          <Inbox size={36} className="mb-4 text-slate-300" />
+        <div className="flex min-h-80 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-6 text-center shadow-sm">
+          <Inbox size={36} className="mb-4 text-slate-400" />
           <h2 className="font-semibold text-slate-900">No hay métricas para evaluar</h2>
           <p className="mt-1 max-w-sm text-sm text-slate-500">Completa un entrenamiento y asegúrate de que el worker haya enviado métricas por época.</p>
         </div>

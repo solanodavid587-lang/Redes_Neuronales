@@ -6,6 +6,7 @@ export interface Dataset {
   projectId?: string | null;
   storagePath?: string | null;
   name: string;
+  description: string;
   format: DatasetFormat;
   size: string;
   sizeBytes?: number;
@@ -13,5 +14,15 @@ export interface Dataset {
   status: DatasetStatus;
   trainSplit: number;
   valSplit: number;
+  targetColumn?: string | null;
+  featureColumns: string[];
+  sequenceLength?: number | null;
   uploadedAt: string;
+}
+
+export interface DatasetPreview {
+  columns: string[];
+  records: Record<string, string | string[] | null>[];
+  rowsReturned: number;
+  hasMore: boolean;
 }

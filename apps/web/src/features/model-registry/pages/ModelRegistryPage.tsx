@@ -8,6 +8,8 @@ import { ErrorState, LoadingState } from '../../../components/ui/Feedback';
 import { useEffect } from 'react';
 import type { Project } from '../../projects/types';
 import type { ArchitectureConfig } from '../../architectures/types';
+import { useAuth } from '../../../auth/AuthProvider';
+import { canRegisterModels } from '../../../auth/permissions';
 
 interface ArchitectureOption extends ArchitectureConfig {
   id: string;
@@ -16,6 +18,8 @@ interface ArchitectureOption extends ArchitectureConfig {
 }
 
 export default function ModelRegistryPage() {
+  const { user } = useAuth();
+  const mayRegister = canRegisterModels(user?.role);
   const { data, loading, error, reload } = useApiResource<ModelVersion>('/model-versions?limit=100');
   const [selectedModel, setSelectedModel] = useState<ModelVersion | null>(null);
   const [search, setSearch] = useState('');
@@ -80,13 +84,25 @@ export default function ModelRegistryPage() {
     }
   }
 
+  async function deleteModel(model: ModelVersion) {
+    if (!window.confirm(`¿Eliminar el borrador "${model.name}" (${model.version})?`)) return;
+    setActionError('');
+    try {
+      await api.delete(`/model-versions/${model.id}`);
+      setSelectedModel(null);
+      reload();
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo eliminar el modelo.');
+    }
+  }
+
   const availableArchitectures = architectures.filter(item => item.projectId === projectId);
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">Registro de modelos</h1><p className="mt-1 text-sm text-slate-500">Consulta versiones, metadatos y estado de revisión.</p></div>
-        <button onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={16} /> Registrar modelo</button>
+        {mayRegister && <button onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={16} /> Registrar modelo</button>}
       </header>
 
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -113,9 +129,9 @@ export default function ModelRegistryPage() {
         ) : <div className="flex min-h-80 flex-col items-center justify-center px-6 text-center"><Inbox size={36} className="mb-4 text-slate-300" /><h2 className="font-semibold text-slate-900">{search ? 'No hay resultados' : 'No hay modelos registrados'}</h2><p className="mt-1 text-sm text-slate-500">Registra metadatos de un modelo para iniciar su seguimiento.</p></div>}
       </section>
 
-      {selectedModel && <ModelDetailsPanel model={selectedModel} onClose={() => setSelectedModel(null)} onStatusChange={status => updateStatus(selectedModel, status)} error={actionError} />}
+      {selectedModel && <ModelDetailsPanel model={selectedModel} role={user?.role} canDelete={mayRegister} onClose={() => setSelectedModel(null)} onDelete={() => deleteModel(selectedModel)} onStatusChange={status => updateStatus(selectedModel, status)} error={actionError} />}
 
-      {modalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {mayRegister && modalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <button aria-label="Cerrar modal" onClick={() => setModalOpen(false)} className="absolute inset-0 bg-slate-900/40" />
         <section role="dialog" aria-modal="true" aria-labelledby="create-model-title" className="relative w-full max-w-lg rounded-xl bg-white shadow-2xl">
           <header className="flex items-center justify-between border-b p-5"><h2 id="create-model-title" className="font-semibold">Registrar versión de modelo</h2><button onClick={() => setModalOpen(false)} aria-label="Cerrar" className="rounded p-1 hover:bg-slate-100"><X size={20} /></button></header>

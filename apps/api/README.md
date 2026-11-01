@@ -13,7 +13,8 @@ The API authenticates local user accounts and issues access tokens for private
    `sslmode=require` and safely handles special characters in the password.
    `DATABASE_URL` remains supported as a backwards-compatible fallback.
 3. Generate a long random `AUTH_TOKEN_SECRET` for signing API access tokens.
-   Set `SUPABASE_URL` only if you use Supabase Storage.
+   `SUPABASE_URL` identifies the project and is required to form the JWT issuer;
+   Supabase Auth is not used for local login.
 4. Install dependencies and initialize the schema with Alembic:
 
    ```powershell
@@ -55,23 +56,72 @@ is scoped to the token's `sub` claim.
 
 | Area | Routes |
 |---|---|
-| Auth | `POST /auth/login`, `GET /auth/me`, admin-only `GET/POST /auth/users` |
+| Auth | `POST /auth/login`, `GET /auth/me`, admin-only `GET/POST /auth/users`, `PATCH /auth/users/{id}` |
 | Dashboard | `GET /dashboard/summary` |
-| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}` |
-| Datasets | `GET/POST /datasets`, `DELETE /datasets/{id}` |
-| Architectures | `GET/POST /architectures`, `PATCH /architectures/{id}`, `POST /architectures/{id}/validate` |
-| Training | `GET/POST /training-jobs`, `GET /training-jobs/{id}/metrics` |
-| Worker metrics | `POST /training-jobs/{id}/metrics` |
-| Model registry | `GET/POST /model-versions`, `PATCH /model-versions/{id}` |
-| Reports | `GET/POST /reports` |
+| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}`, admin-only `DELETE /projects/{id}/permanent` |
+| Datasets | `GET/POST /datasets`, `POST /datasets/upload`, `PATCH/DELETE /datasets/{id}` |
+| Architectures | `GET/POST /architectures`, `PATCH/DELETE /architectures/{id}`, `POST /architectures/{id}/validate` |
+| Training | `GET/POST /training-jobs`, `DELETE /training-jobs/{id}`, `GET /training-jobs/{id}/metrics` |
+| Training worker | `POST /training-jobs/worker/claim`, `GET /datasets/worker/{id}/download`, `POST /training-jobs/{id}/metrics`, `POST /training-jobs/{id}/complete`, `POST /training-jobs/{id}/fail` |
+| Model registry | `GET/POST /model-versions`, `PATCH/DELETE /model-versions/{id}` |
+| Reports | `GET/POST /reports`, `DELETE /reports/{id}` |
 | Audit | `GET /audit` |
 
 List routes return `{items, total, limit, offset}`. `limit` is capped at 100.
 `DELETE /projects/{id}` archives the project rather than destroying its records.
+Admins can permanently delete a project with
+`DELETE /projects/{id}/permanent` after its training jobs and model versions are
+removed. Associated datasets and architectures are kept and detached from the
+project. Admins can also delete completed training jobs; running jobs cannot be
+deleted.
 
-Training-job creation queues metadata only; model execution requires a worker.
-Dataset and report routes currently persist metadata and storage paths; binary
-uploads, report rendering, and a training worker are separate integrations.
+Projects require an available, ready dataset (`datasetId`) at creation time and
+select one model family (`modelFamily`: `CNN` or `RNN`). Their objective is
+stored separately from the description. Dataset records include optional
+target/features, sequence length, description, and train/validation splits.
+Architectures must match the project's family and include its corresponding
+convolutional or recurrent layer; they store input shape and per-layer settings.
+Training configuration validates optimizer, loss, batch size, learning rate,
+early stopping, patience, and random seed.
+
+The initial dataset is associated with the project and cannot be removed while
+it is the project's only dataset or is referenced by a training job. Projects
+with saved architectures cannot change their model family.
+
+## Role permissions
+
+The API enforces these permissions on writes; hiding UI controls is not the
+security boundary. `ADMIN` can perform all operations. `PROJECT_MANAGER` can
+create, edit, and archive projects and manage datasets. `AI_ENGINEER` can manage
+datasets, create/edit/delete architectures, queue training, and register model
+versions. `REVIEWER` has read access and can approve models in review. All roles
+can request reports; user administration and audit logs remain `ADMIN` only.
+
+Training jobs are claimed by a separate TensorFlow/Keras worker; the API does
+not train inside an HTTP request. Configure `WORKER_API_KEY` in the API and
+worker environments with the same secret. Dataset uploads use Hugging Face when
+both `HF_TOKEN` and `HF_DATASET_REPO_ID` are configured; otherwise they use the
+configured S3-compatible bucket or local `DATASET_STORAGE_DIR`. The Hugging Face
+repository must be a private dataset repository and the token needs read/write
+access to it. The API proxies private dataset downloads to the worker using its
+authenticated API key; the Hugging Face token is not needed in the worker or
+browser. S3 remains available for model artifacts and as a dataset fallback.
+Without remote storage, API and worker must share the same persistent dataset
+directory. The worker trains CNN or RNN architectures, publishes per-epoch
+metrics, and registers the resulting `.keras` artifact. Worker setup, runtime
+requirements, and supported numeric CSV inputs are documented in
+[`workers/README.md`](../../workers/README.md). Run database migrations before
+using worker artifact fields.
+
+`POST /datasets/upload` accepts CSV, JSON, ZIP, TXT, and supported image files
+without an application-defined file-size limit, and stores them in the configured
+Hugging Face dataset repository, S3 bucket, or
+`DATASET_STORAGE_DIR` (default: `data/datasets`) after authenticating the
+request. CSV preview, dataset deletion, and training-worker downloads use the
+same provider as each upload. See [`DEPLOYMENT.md`](../../DEPLOYMENT.md) for
+Vercel, Render, Hugging Face, and S3-compatible storage setup.
+The selected provider, account quota, and hosting platform may impose their own
+file-size or storage limits.
 
 ## Database SQL and migrations
 

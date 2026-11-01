@@ -1,1 +1,25 @@
 
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurolab-training-worker"
+version = "1.0.0"
+description = "Isolated TensorFlow/Keras training worker for NeuroLab"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "numpy>=1.26,<2.2",
+  "boto3>=1.35,<2",
+  "tensorflow-cpu>=2.20,<3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+include = ["training*"]

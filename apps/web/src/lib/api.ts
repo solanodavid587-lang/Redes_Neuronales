@@ -56,9 +56,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       if (typeof body.detail === 'string') message = body.detail;
       else if (Array.isArray(body.detail)) {
         message = body.detail
-          .map((item) => typeof item === 'object' && item !== null && 'msg' in item
-            ? String(item.msg)
-            : 'Revisa los datos enviados.')
+          .map((item) => {
+            if (typeof item === 'string') return item;
+            if (typeof item === 'object' && item !== null && 'msg' in item) return String(item.msg);
+            return 'Revisa los datos enviados.';
+          })
           .join(' ');
       } else if (body.message) message = body.message;
     } catch {
@@ -74,7 +76,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+    request<T>(path, {
+      method: 'POST',
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: 'DELETE' }),

@@ -17,7 +17,6 @@ services:
     plan: free
     rootDir: apps/api
     dockerfilePath: ./Dockerfile
-    preDeployCommand: alembic upgrade head
     healthCheckPath: /health
     envVars:
       - fromGroup: neurolab-shared

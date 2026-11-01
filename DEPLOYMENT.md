@@ -43,10 +43,11 @@ efímero: no se debe usar para persistir datasets ni artefactos.
    privados y no los pongas en Vercel. Para entrenar, configura `WORKER_API_KEY`
    también en el entorno local del worker y usa
    `NEUROLAB_API_URL=https://<tu-api>.onrender.com/api/v1`.
-5. El servicio web ejecuta `alembic upgrade head` antes del despliegue y expone
-   `/health`. Render Free puede tardar cerca de un minuto en despertar tras
-   inactividad y dispone de 750 horas gratuitas al mes; el worker local que
-   consulta la API continuamente puede mantenerla despierta.
+5. Al iniciar el contenedor, la API ejecuta `alembic upgrade head` antes de
+   arrancar Uvicorn y expone `/health`. Si una migración falla, la API no inicia.
+   Render Free puede tardar cerca de un minuto en despertar tras inactividad y
+   dispone de 750 horas gratuitas al mes; el worker local que consulta la API
+   continuamente puede mantenerla despierta.
 6. Configura `VITE_API_BASE_URL` en Vercel con la URL pública de la API más
    `/api/v1`. Vuelve a desplegar la web para que Vite incorpore esa variable.
 

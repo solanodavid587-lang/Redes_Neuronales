@@ -88,6 +88,7 @@ class ApiClient:
                 "Authorization": f"******",
                 "Content-Type": "application/octet-stream",
                 "Content-Length": str(source.stat().st_size),
+                "X-Worker-API-Key": self.settings.api_key,
             },
         )
         try:

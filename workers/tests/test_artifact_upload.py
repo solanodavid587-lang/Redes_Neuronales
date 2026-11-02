@@ -48,6 +48,7 @@ def test_artifact_upload_streams_model_to_authenticated_api(monkeypatch, tmp_pat
     )
     assert request.get_method() == "POST"
     assert request.get_header("Authorization") == "******"
+    assert request.get_header("X-worker-api-key") == "worker-key"
     assert request.get_header("Content-type") == "application/octet-stream"
     assert request.get_header("Content-length") == str(artifact.stat().st_size)
     assert captured["timeout"] == 300

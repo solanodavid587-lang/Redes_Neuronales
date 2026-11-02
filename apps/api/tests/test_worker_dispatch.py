@@ -118,7 +118,10 @@ def test_worker_model_artifact_is_persisted_in_private_huggingface_repo(
     content = b"keras-model-artifact"
     response = client.post(
         f"/api/v1/training-jobs/{job_id}/artifact",
-        headers={**headers, "Content-Type": "application/octet-stream"},
+        headers={
+            "X-Worker-API-Key": "worker-test-key",
+            "Content-Type": "application/octet-stream",
+        },
         content=content,
     )
 

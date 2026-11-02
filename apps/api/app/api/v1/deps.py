@@ -2,7 +2,7 @@ import hmac
 from typing import Any
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError
 from sqlalchemy.orm import Session
@@ -109,12 +109,18 @@ def require_roles(*allowed_roles: str):
 
 def require_worker(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    worker_api_key: str | None = Header(default=None, alias="X-Worker-API-Key"),
 ) -> None:
     expected = get_settings().worker_api_key
     if (
-        credentials is None
-        or not expected
-        or not hmac.compare_digest(credentials.credentials, expected)
+        not expected
+        or not any(
+            candidate is not None and hmac.compare_digest(candidate, expected)
+            for candidate in (
+                credentials.credentials if credentials is not None else None,
+                worker_api_key,
+            )
+        )
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

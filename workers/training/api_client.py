@@ -1,5 +1,4 @@
 import json
-import http.client
 from pathlib import Path
 import shutil
 from typing import Any
@@ -82,47 +81,31 @@ class ApiClient:
         return job
 
     def upload_artifact(self, job_id: str, source: Path) -> dict[str, Any]:
-        parsed = urlsplit(
-            f"{self.settings.api_url}/training-jobs/{job_id}/artifact"
+        request = Request(
+            f"{self.settings.api_url}/training-jobs/{job_id}/artifact",
+            method="POST",
+            headers={
+                "Authorization": f"******",
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(source.stat().st_size),
+            },
         )
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ApiClientError("NEUROLAB_API_URL debe ser una URL HTTP válida.")
-        connection_type = (
-            http.client.HTTPSConnection
-            if parsed.scheme == "https"
-            else http.client.HTTPConnection
-        )
-        connection = connection_type(
-            parsed.hostname,
-            parsed.port,
-            timeout=300,
-        )
-        path = parsed.path or "/"
-        if parsed.query:
-            path = f"{path}?{parsed.query}"
         try:
-            connection.putrequest("POST", path)
-            connection.putheader("Authorization", f"******")
-            connection.putheader("Content-Type", "application/octet-stream")
-            connection.putheader("Content-Length", str(source.stat().st_size))
-            connection.endheaders()
             with source.open("rb") as artifact:
-                while chunk := artifact.read(1024 * 1024):
-                    connection.send(chunk)
-            response = connection.getresponse()
-            body = response.read()
-        except (OSError, TimeoutError, http.client.HTTPException) as error:
+                request.data = iter(lambda: artifact.read(1024 * 1024), b"")
+                request.add_header("Content-Length", str(source.stat().st_size))
+                with urlopen(request, timeout=300) as response:
+                    body = response.read()
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise ApiClientError(
+                f"La API respondió {error.code} al guardar el modelo: {detail[:500]}"
+            ) from error
+        except (OSError, TimeoutError, URLError) as error:
             raise ApiClientError(
                 f"No se pudo cargar el modelo a la API: {error}"
             ) from error
-        finally:
-            connection.close()
 
-        if response.status >= 400:
-            detail = body.decode("utf-8", errors="replace")
-            raise ApiClientError(
-                f"La API respondió {response.status} al guardar el modelo: {detail[:500]}"
-            )
         try:
             decoded = json.loads(body)
         except json.JSONDecodeError as error:

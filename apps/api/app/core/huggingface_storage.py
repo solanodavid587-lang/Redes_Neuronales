@@ -40,7 +40,10 @@ def _api(token: str) -> Any:
 
 
 def upload_file(
-    source: Path, path_in_repo: str, settings: Settings | None = None
+    source: Path,
+    path_in_repo: str,
+    settings: Settings | None = None,
+    commit_message: str = "Subir dataset de NeuroLab",
 ) -> None:
     token, repo_id = _configuration(settings)
     _api(token).upload_file(
@@ -48,7 +51,7 @@ def upload_file(
         path_in_repo=path_in_repo,
         repo_id=repo_id,
         repo_type="dataset",
-        commit_message="Subir dataset de NeuroLab",
+        commit_message=commit_message,
     )
 
 

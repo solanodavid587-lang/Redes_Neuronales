@@ -8,13 +8,14 @@ import tempfile
 from typing import Any
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from app.core.config import get_settings
+from app.core.github_actions import GitHubActionsError, dispatch_training_workflow
 from app.core import huggingface_storage
 from app.core.object_storage import (
     download_file as download_object_file,
@@ -1245,6 +1246,7 @@ def create_training_job(
     add_audit(db, owner_id, get_user_email(user), "training.queued", job.id)
     db.commit()
     db.refresh(job)
+    _dispatch_training_workflow(db, job)
     return training_output(db, job)
 
 
@@ -1340,7 +1342,22 @@ def restart_training_job(
     add_audit(db, job.owner_id, get_user_email(user), "training.requeued", job.id)
     db.commit()
     db.refresh(job)
+    _dispatch_training_workflow(db, job)
     return training_output(db, job)
+
+
+def _dispatch_training_workflow(db: Session, job: TrainingJob) -> None:
+    try:
+        dispatch_training_workflow(job.id)
+    except GitHubActionsError as error:
+        logger.exception("No se pudo iniciar el workflow para el trabajo %s.", job.id)
+        job.status = "FAILED"
+        job.error_message = str(error)[:2000]
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail="No se pudo iniciar el entrenamiento automático. Revisa la configuración de GitHub Actions.",
+        ) from error
 
 
 @router.get("/training-jobs/{job_id}/metrics")
@@ -1417,18 +1434,77 @@ def record_training_metric(
     }
 
 
-@router.post("/training-jobs/worker/claim")
-def claim_training_job(
+@router.post("/training-jobs/{job_id}/artifact")
+async def upload_training_artifact(
+    job_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     _worker: None = Depends(require_worker),
 ) -> dict[str, Any]:
     job = db.scalar(
         select(TrainingJob)
-        .where(TrainingJob.status == "QUEUED")
-        .order_by(TrainingJob.created_at)
-        .with_for_update(skip_locked=True)
-        .limit(1)
+        .where(TrainingJob.id == job_id)
     )
+    if job is None:
+        raise HTTPException(status_code=404, detail="Trabajo de entrenamiento no encontrado.")
+    if job.status != "RUNNING":
+        raise HTTPException(status_code=409, detail="El trabajo no está en ejecución.")
+    owner_id = job.owner_id
+
+    settings = get_settings()
+    try:
+        if not huggingface_storage.is_configured(settings):
+            raise RuntimeError("Hugging Face no está configurado para guardar modelos.")
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    owner_directory = hashlib.sha256(owner_id.encode("utf-8")).hexdigest()
+    artifact_path = f"models/{owner_directory}/{job_id}.keras"
+    checksum = hashlib.sha256()
+    size_bytes = 0
+    with tempfile.TemporaryDirectory(prefix="neurolab-model-") as directory:
+        artifact = Path(directory) / f"{job_id}.keras"
+        with artifact.open("wb") as target:
+            async for chunk in request.stream():
+                if chunk:
+                    target.write(chunk)
+                    checksum.update(chunk)
+                    size_bytes += len(chunk)
+        if size_bytes == 0:
+            raise HTTPException(status_code=400, detail="El archivo del modelo está vacío.")
+        try:
+            huggingface_storage.upload_file(
+                artifact,
+                artifact_path,
+                settings,
+                commit_message="Guardar modelo entrenado de NeuroLab",
+            )
+        except Exception as error:
+            logger.exception("No se pudo guardar el modelo del trabajo %s.", job_id)
+            raise HTTPException(
+                status_code=502,
+                detail="No se pudo guardar el modelo entrenado en Hugging Face.",
+            ) from error
+
+    return {
+        "artifact_path": artifact_path,
+        "checksum": checksum.hexdigest(),
+        "size_bytes": size_bytes,
+    }
+
+
+@router.post("/training-jobs/worker/claim")
+def claim_training_job(
+    job_id: str | None = Query(default=None, min_length=36, max_length=36),
+    db: Session = Depends(get_db),
+    _worker: None = Depends(require_worker),
+) -> dict[str, Any]:
+    statement = select(TrainingJob).where(TrainingJob.status == "QUEUED")
+    if job_id is not None:
+        statement = statement.where(TrainingJob.id == job_id)
+    else:
+        statement = statement.order_by(TrainingJob.created_at)
+    job = db.scalar(statement.with_for_update(skip_locked=True).limit(1))
     if job is None:
         return {"job": None}
 

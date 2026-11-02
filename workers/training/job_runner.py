@@ -48,18 +48,20 @@ class TrainingJobRunner:
         self.client = client
         self.settings = settings
 
-    def run(self, job: dict[str, Any]) -> None:
+    def run(self, job: dict[str, Any]) -> bool:
         job_id = str(job.get("id", ""))
         if not job_id:
             raise ValueError("La API entregó un trabajo sin identificador.")
         try:
             self._train(job_id, job)
+            return True
         except Exception as error:
             logger.exception("Falló el entrenamiento del trabajo %s.", job_id)
             try:
                 self.client.fail(job_id, str(error) or error.__class__.__name__)
             except Exception:
                 logger.exception("No se pudo reportar el fallo del trabajo %s.", job_id)
+            return False
 
     def _train(self, job_id: str, job: dict[str, Any]) -> None:
         import tensorflow as tf
@@ -156,6 +158,13 @@ class TrainingJobRunner:
                 artifact_key,
             )
             completion_payload["artifact_path"] = artifact_key
+        elif self.settings.persist_artifacts_via_api:
+            completion_payload.update(
+                self.client.upload_artifact(
+                    job_id,
+                    self.settings.model_storage_dir / artifact["artifact_path"],
+                )
+            )
         self.client.complete(
             job_id,
             completion_payload,

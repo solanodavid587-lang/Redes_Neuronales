@@ -10,6 +10,7 @@ class WorkerSettings:
     dataset_storage_dir: Path
     model_storage_dir: Path
     poll_interval_seconds: float
+    persist_artifacts_via_api: bool = False
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
@@ -35,6 +36,9 @@ class WorkerSettings:
             poll_interval_seconds=max(
                 1.0, float(os.environ.get("WORKER_POLL_INTERVAL", "3"))
             ),
+            persist_artifacts_via_api=os.environ.get(
+                "PERSIST_ARTIFACTS_VIA_API", ""
+            ).strip().lower() in {"1", "true", "yes"},
             s3_bucket=os.environ.get("S3_BUCKET") or None,
             s3_region=os.environ.get("S3_REGION", "us-east-1"),
             s3_endpoint_url=os.environ.get("S3_ENDPOINT_URL") or None,

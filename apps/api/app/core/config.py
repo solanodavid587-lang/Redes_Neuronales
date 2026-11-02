@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str | None = None
     auth_token_secret: str | None = None
     worker_api_key: str | None = None
+    github_actions_token: str | None = None
+    github_actions_repository: str | None = None
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
     s3_endpoint_url: str | None = None

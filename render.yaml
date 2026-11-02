@@ -36,3 +36,7 @@ services:
         sync: false
       - key: HF_DATASET_REPO_ID
         sync: false
+      - key: GH_ACTIONS_TOKEN
+        sync: false
+      - key: GH_ACTIONS_REPOSITORY
+        value: solanodavid587-lang/Redes_Neuronales

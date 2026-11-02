@@ -1,8 +1,10 @@
 import json
+import http.client
 from pathlib import Path
 import shutil
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from training.config import WorkerSettings
@@ -69,12 +71,65 @@ class ApiClient:
                 f"No se pudo descargar el dataset desde la API: {error}"
             ) from error
 
-    def claim(self) -> dict[str, Any] | None:
-        response = self.request("POST", "/training-jobs/worker/claim", {})
+    def claim(self, job_id: str | None = None) -> dict[str, Any] | None:
+        path = "/training-jobs/worker/claim"
+        if job_id is not None:
+            path = f"{path}?{urlencode({'job_id': job_id})}"
+        response = self.request("POST", path, {})
         job = response.get("job")
         if job is not None and not isinstance(job, dict):
             raise ApiClientError("La API devolvió un trabajo con formato inválido.")
         return job
+
+    def upload_artifact(self, job_id: str, source: Path) -> dict[str, Any]:
+        parsed = urlsplit(
+            f"{self.settings.api_url}/training-jobs/{job_id}/artifact"
+        )
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ApiClientError("NEUROLAB_API_URL debe ser una URL HTTP válida.")
+        connection_type = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
+        connection = connection_type(
+            parsed.hostname,
+            parsed.port,
+            timeout=300,
+        )
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        try:
+            connection.putrequest("POST", path)
+            connection.putheader("Authorization", f"******")
+            connection.putheader("Content-Type", "application/octet-stream")
+            connection.putheader("Content-Length", str(source.stat().st_size))
+            connection.endheaders()
+            with source.open("rb") as artifact:
+                while chunk := artifact.read(1024 * 1024):
+                    connection.send(chunk)
+            response = connection.getresponse()
+            body = response.read()
+        except (OSError, TimeoutError, http.client.HTTPException) as error:
+            raise ApiClientError(
+                f"No se pudo cargar el modelo a la API: {error}"
+            ) from error
+        finally:
+            connection.close()
+
+        if response.status >= 400:
+            detail = body.decode("utf-8", errors="replace")
+            raise ApiClientError(
+                f"La API respondió {response.status} al guardar el modelo: {detail[:500]}"
+            )
+        try:
+            decoded = json.loads(body)
+        except json.JSONDecodeError as error:
+            raise ApiClientError("La API devolvió una respuesta inválida al guardar el modelo.") from error
+        if not isinstance(decoded, dict):
+            raise ApiClientError("La API devolvió una respuesta inesperada al guardar el modelo.")
+        return decoded
 
     def publish_metric(self, job_id: str, payload: dict[str, Any]) -> None:
         self.request("POST", f"/training-jobs/{job_id}/metrics", payload)

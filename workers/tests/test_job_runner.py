@@ -42,6 +42,7 @@ class FakeTrainingClient:
         self.completions = []
         self.failures = []
         self.downloads = []
+        self.uploads = []
 
     def publish_metric(self, job_id, payload):
         self.metrics.append((job_id, payload))
@@ -55,6 +56,14 @@ class FakeTrainingClient:
     def download_dataset(self, dataset_id, destination):
         self.downloads.append((dataset_id, destination))
         destination.write_text("feature,label\n1,0\n", encoding="utf-8")
+
+    def upload_artifact(self, job_id, source):
+        self.uploads.append((job_id, source.read_bytes()))
+        return {
+            "artifact_path": source.name,
+            "checksum": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "size_bytes": source.stat().st_size,
+        }
 
 
 def test_runner_trains_publishes_and_registers_artifact(monkeypatch, tmp_path):
@@ -93,6 +102,7 @@ def test_runner_trains_publishes_and_registers_artifact(monkeypatch, tmp_path):
         dataset_storage_dir=tmp_path / "datasets",
         model_storage_dir=tmp_path / "models",
         poll_interval_seconds=1,
+        persist_artifacts_via_api=True,
     )
     client = FakeTrainingClient()
     job = {
@@ -144,3 +154,4 @@ def test_runner_trains_publishes_and_registers_artifact(monkeypatch, tmp_path):
     assert payload["artifact_path"] == "job-123.keras"
     assert payload["checksum"] == hashlib.sha256(b"keras-artifact").hexdigest()
     assert (settings.model_storage_dir / "job-123.keras").read_bytes() == b"keras-artifact"
+    assert client.uploads == [("job-123", b"keras-artifact")]

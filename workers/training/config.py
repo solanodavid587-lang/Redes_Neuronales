@@ -25,7 +25,7 @@ class WorkerSettings:
         return cls(
             api_url=os.environ.get(
                 "NEUROLAB_API_URL", "http://localhost:8000/api/v1"
-            ).rstrip("/"),
+            ).strip().rstrip("/"),
             api_key=api_key,
             dataset_storage_dir=Path(
                 os.environ.get("DATASET_STORAGE_DIR", "../apps/api/data/datasets")

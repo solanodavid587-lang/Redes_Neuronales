@@ -53,3 +53,32 @@ def test_partial_github_actions_configuration_is_rejected():
 
     with pytest.raises(GitHubActionsError, match="GH_ACTIONS_TOKEN"):
         dispatch_training_workflow("job-123", settings)
+
+
+def test_render_environment_variable_names_are_loaded(monkeypatch):
+    monkeypatch.setenv("GH_ACTIONS_TOKEN", "render-token")
+    monkeypatch.setenv(
+        "GH_ACTIONS_REPOSITORY",
+        "solanodavid587-lang/Redes_Neuronales",
+    )
+
+    settings = Settings(
+        _env_file=None,
+        supabase_url="https://test-project.supabase.co",
+    )
+
+    assert settings.github_actions_token == "render-token"
+    assert settings.github_actions_repository == (
+        "solanodavid587-lang/Redes_Neuronales"
+    )
+
+
+def test_production_requires_github_actions_configuration():
+    settings = Settings(
+        _env_file=None,
+        supabase_url="https://test-project.supabase.co",
+        app_env="production",
+    )
+
+    with pytest.raises(GitHubActionsError, match="GitHub Actions no está configurado"):
+        dispatch_training_workflow("job-123", settings)

@@ -16,6 +16,10 @@ def dispatch_training_workflow(
     token = configured.github_actions_token
     repository = configured.github_actions_repository
     if not token and not repository:
+        if configured.app_env == "production":
+            raise GitHubActionsError(
+                "GitHub Actions no está configurado. Revisa GH_ACTIONS_TOKEN y GH_ACTIONS_REPOSITORY en Render."
+            )
         return False
     if not token or not repository:
         raise GitHubActionsError(

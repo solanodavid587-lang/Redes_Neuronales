@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -18,8 +19,22 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str | None = None
     auth_token_secret: str | None = None
     worker_api_key: str | None = None
-    github_actions_token: str | None = None
-    github_actions_repository: str | None = None
+    github_actions_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GH_ACTIONS_TOKEN",
+            "GITHUB_ACTIONS_TOKEN",
+            "github_actions_token",
+        ),
+    )
+    github_actions_repository: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GH_ACTIONS_REPOSITORY",
+            "GITHUB_ACTIONS_REPOSITORY",
+            "github_actions_repository",
+        ),
+    )
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
